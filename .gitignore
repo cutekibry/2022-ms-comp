@@ -1,2 +1,4 @@
 evenodd/evenodd
 evenodd/testfile
+evenodd/disk*
+.~lock*
