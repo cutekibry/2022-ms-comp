@@ -1,21 +1,332 @@
+#include <assert.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 
+typedef __uint128_t uint128;
+
+#define max(x, y)                                                              \
+  ({                                                                           \
+    typeof(x) _x = (x);                                                        \
+    typeof(y) _y = (y);                                                        \
+    _x > _y ? _x : _y;                                                         \
+  })
+#define min(x, y)                                                              \
+  ({                                                                           \
+    typeof(x) _x = (x);                                                        \
+    typeof(y) _y = (y);                                                        \
+    _x < _y ? _x : _y;                                                         \
+  })
+#define ALL1(n) (((uint128)1 << (n)) - 1)
+
+struct stat get_file_stat(const char *file_name) {
+  struct stat file_stat;
+  stat(file_name, &file_stat);
+  return file_stat;
+}
+
 /**
- * @brief 读入文件 `file_name`，经 EVENODD 加密后储存
- * 从文件 `file_name` 读入数据并编码，然后将 ``p + 2`` 个数据块储存在 "disk_0",
- * "disk_1", ..., "disk_``p + 1``" 文件夹下。
- *
+ * @brief 创建二进制文件 file_name。
+ * 会一并创造其祖先文件夹（如果不存在）。
  * @param file_name 文件名
- * @param p 用于 EVENODD 加密的质数，应当为不超过 100 的整数
- *
  * @return NULL
+ * @example file_create("disk3/subdir/something");
+ */
+void file_create(const char *file_name) {
+  int n = strlen(file_name);
+  char str[n + 1];
+  struct stat tmp_stat;
+
+  for (int i = 0; i < n; i++) {
+    str[i] = file_name[i];
+    if (str[i] == '/') {
+      str[i] = '\0';
+      if (access(str, 0) == -1)
+        mkdir(str, 0777);
+      str[i] = '/';
+    }
+  }
+  str[n] = '\0';
+  fclose(fopen(str, "wb"));
+}
+
+const int MAX_IO_BUFFER_SIZE_SUM =
+    1 << 24; // 函数内 IO 缓存区大小最大字节数（不严格），防止空间过大
+const int MAX_PER_IO_BUFFER_SIZE =
+    1 << 20; // 单个 IO 缓存区大小最大字节数，防止缓存过大影响速度
+
+/**
+ * @brief 用于进行二进制文件输入的结构体（带缓存区）。
  *
+ * @example
+ * // 新建一个 Input 类型结构体
+ * struct Input input;
+ *
+ * // 初始化 input，缓存字节数为 1000，从文件 "testfile" 里读入数据
+ * init_input(input, 1000, "testfile");
+ *
+ * // 从输入文件里读入 35 个 bool 并输出
+ * // 当输入文件字节数不够时，会令读入的 bool 为 0
+ * uint128 x = read_bits(input, 35);
+ * printf("%u", (unsigned)x);
+ *
+ * // 销毁 input，释放空间并关闭文件
+ * del_input(input);
+ */
+struct Input {
+  char *st, *ed, *p;
+  FILE *file;
+  int remain;
+};
+
+/**
+ * @brief 初始化 Input。
+ * 为 (*buffer) 申请 size 字节的空间，设置其输入文件名为 file_name。
+ * @param buffer 指向 Input 的指针
+ * @param size 申请字节大小
+ * @param file_name 文件名
+ * @return NULL
+ */
+void init_input(struct Input *buffer, int size, const char *file_name) {
+  (*buffer).st = (char *)malloc(size);
+  (*buffer).ed = (*buffer).st + size;
+  (*buffer).p = (*buffer).ed;
+  (*buffer).file = fopen(file_name, "rb");
+  (*buffer).remain = 8;
+}
+
+/**
+ * @brief 销毁 Input。
+ * @param buffer 指向 Input 的指针
+ * @return NULL
+ */
+void del_input(struct Input *buffer) {
+  fclose((*buffer).file);
+  free((*buffer).st);
+  (*buffer).st = (*buffer).ed = (*buffer).p = NULL;
+  (*buffer).file = NULL;
+}
+
+/**
+ * @brief 从文件读入足量字符填充缓存区。需要保证缓存区已全部用尽。
+ * 一般不需要手动调用此函数，当缓存区用完时会自动调用。
+ * @param buffer 指向 Input 的指针
+ * @return NULL
+ */
+void flush_input(struct Input *buffer) {
+  assert((*buffer).p == (*buffer).ed);
+  memset((*buffer).st, 0, (*buffer).ed - (*buffer).st);
+  fread((*buffer).st, 1, (*buffer).ed - (*buffer).st, (*buffer).file);
+  (*buffer).remain = 8;
+  (*buffer).p = (*buffer).st;
+}
+
+/**
+ * @brief 从 Input 读入 n 个 bool 并返回。
+ * 若读入的 bool 分别为 x_0, x_1, ..., x_n，则返回的值为 (x_0x_1...x_n)_2。
+ * @param buffer 指向 Input 的指针
+ * @param n 读入 bool 个数，不超过 128
+ * @return 由读入的 n 个 bool 构成的整数
+ */
+uint128 read_bits(struct Input *buffer, int n) {
+  uint128 result = 0;
+
+  if ((*buffer).p == (*buffer).ed)
+    flush_input(buffer);
+
+  if (n < (*buffer).remain) {
+    (*buffer).remain -= n;
+    result = *(*buffer).p >> (*buffer).remain & ALL1(n);
+  } else {
+    result = *(*buffer).p & ALL1((*buffer).remain);
+    n -= (*buffer).remain;
+    (*buffer).p++;
+
+    while (n >= 8) {
+      if ((*buffer).p == (*buffer).ed)
+        flush_input(buffer);
+      result = result << 8 | *(*buffer).p;
+      n -= 8;
+      (*buffer).p++;
+    }
+
+    if ((*buffer).p == (*buffer).ed)
+      flush_input(buffer);
+    (*buffer).remain = 8 - n;
+    result = result << n | (*(*buffer).p >> (*buffer).remain & ALL1(n));
+  }
+  return result;
+}
+
+/**
+ * @brief 用于进行二进制文件输出的结构体（带缓存区）。
+ *
+ * @example
+ * // 新建一个 Output 类型结构体
+ * struct Output output;
+ *
+ * // 初始化 output，缓存字节数为 1000 * 16 = 16000，向文件 "testfile" 写入数据
+ * init_output(output, 1000, "testfile");
+ *
+ * // 向输出文件写入 (1101)_2
+ * // 实际上会先写入缓存区，缓存区满时再将缓存区一次性写入文件
+ * write_bits(output, 0b1101, 4);
+ *
+ * // 销毁 output（输出缓存区，释放空间并关闭文件）
+ * del_input(output);
+ */
+struct Output {
+  char *st, *ed, *p;
+  FILE *file;
+  int remain;
+};
+
+/**
+ * @brief 初始化 Output。
+ * 为 Output 申请 size 字节大小的空间，设置输出文件名为 file_name。
+ * @param buffer 指向 Output 的指针
+ * @param size 申请字节大小
+ * @param file_name 文件名
+ * @return NULL
+ */
+void init_output(struct Output *buffer, int size, const char *file_name) {
+  (*buffer).st = (char *)malloc(size);
+  (*buffer).ed = (*buffer).st + size;
+  (*buffer).p = (*buffer).st;
+
+  file_create(file_name);
+  (*buffer).file = fopen(file_name, "wb");
+  (*buffer).remain = 8;
+  memset((*buffer).st, 0, size);
+}
+
+/**
+ * @brief 输出 Output 缓存区内的内容并清空。
+ * 若 bool 数不为 8 的倍数，则在末尾补零直至 bool 数为 8 的倍数。
+ * @param buffer 指向 Output 的指针
+ * @return NULL
+ */
+void flush_output(struct Output *buffer) {
+  int bytes = (*buffer).p - (*buffer).st + ((*buffer).remain < 8);
+
+  fwrite((*buffer).st, 1, bytes, (*buffer).file);
+  memset((*buffer).st, 0, bytes);
+
+  (*buffer).p = (*buffer).st;
+  (*buffer).remain = 8;
+}
+
+/**
+ * @brief 销毁 Output（会自动输出缓存区）。
+ * @param buffer 指向 Output 的指针
+ * @return NULL
+ */
+void del_output(struct Output *buffer) {
+  flush_output(buffer);
+  fclose((*buffer).file);
+  free((*buffer).st);
+  (*buffer).st = (*buffer).ed = (*buffer).p = NULL;
+  (*buffer).file = NULL;
+}
+
+/**
+ * @brief 向 Output 输出 n 个 bool。
+ * 令 x = (y_0y_1...y_{n - 1})_2，输出 y_0y_1...y_{n - 1}。
+ * @param buffer 指向 Output 的指针
+ * @param x 输出 bool 的值
+ * @param n 输出 bool 的个数
+ * @return NULL
+ */
+void write_bits(struct Output *buffer, uint128 x, int n) {
+  x &= ALL1(n);
+  if (n < (*buffer).remain) {
+    (*buffer).remain -= n;
+    *(*buffer).p |= x << (*buffer).remain;
+  } else {
+    n -= (*buffer).remain;
+    *(*buffer).p |= x >> n;
+    (*buffer).p++;
+
+    while (n >= 8) {
+      if ((*buffer).p == (*buffer).ed)
+        flush_output(buffer);
+      n -= 8;
+      *(*buffer).p = x >> n;
+      (*buffer).p++;
+    }
+
+    if ((*buffer).p == (*buffer).ed)
+      flush_output(buffer);
+    (*buffer).remain = 8 - n;
+    *(*buffer).p = x << (*buffer).remain;
+  }
+}
+
+/**
+ * @brief 读入文件 file_name，经 EVENODD 加密后储存。
+ * 从文件 file_name 读入数据并编码，然后将 p + 2 个数据块储存在
+ * "disk_0", "disk_1", ..., "disk_{p + 1}" 文件夹下。
+ * @param file_name 文件名，长度不超过 100
+ * @param p 用于 EVENODD 加密的质数，应当为不超过 100 的整数
+ * @return NULL
  * @example write("testfile", 5);
  */
-void write(const char *file_name, const int p) {}
+void write(const char *file_name, const int p) {
+  struct Input input;
+  struct Output output[p + 2];
+  long long file_size;
+  uint128 a[p];   // 0 ... (p - 1) 列的数据
+  uint128 b0, b1; // p 列的数据和 (p + 1) 列的数据
+
+  file_size = get_file_stat(file_name).st_size;
+
+  init_input(
+      &input,
+      min(min(MAX_PER_IO_BUFFER_SIZE, MAX_IO_BUFFER_SIZE_SUM), file_size),
+      file_name);
+
+  for (int i = 0; i < p + 2; i++) {
+    char disk_file_name[120];
+
+    sprintf(disk_file_name, "disk%d/%s", i, file_name);
+    init_output(
+        &output[i],
+        min(min(MAX_PER_IO_BUFFER_SIZE, MAX_IO_BUFFER_SIZE_SUM / (p + 2)),
+            file_size),
+        disk_file_name);
+
+    // 先将文件大小和 p 的值输出
+    write_bits(&output[i], file_size << 8 | p, 48);
+  }
+
+  // 开始加密
+  for (long long t = 0; t < (file_size << 3); t += (p - 1) * p) {
+    for (int i = 0; i < p; i++)
+      a[i] = read_bits(&input, p - 1);
+
+    b0 = b1 = 0;
+
+    for (int i = 0; i < p; i++)
+      b0 ^= a[i];
+
+    for (int i = 0; i < p; i++)
+      b1 ^= (a[i] << i) ^ (a[i] >> (p - i));
+    if (b1 >> (p - 1) & 1)
+      b1 = ~b1;
+    b1 &= ALL1(p - 1);
+
+    for (int i = 0; i < p; i++)
+      write_bits(&output[i], a[i], p - 1);
+    write_bits(&output[p], b0, p - 1);
+    write_bits(&output[p + 1], b1, p - 1);
+  }
+
+  del_input(&input);
+  for (int i = 0; i < p + 2; i++)
+    del_output(&output[i]);
+}
 
 void read(const char *file_name, const char *save_as) {}
 
@@ -28,6 +339,8 @@ void usage() {
 }
 
 int main(int argc, char **argv) {
+  write("testfile", 3);
+  return 0;
   if (argc < 2) {
     usage();
     return -1;
@@ -65,10 +378,9 @@ int main(int argc, char **argv) {
      * splits in folder "disk_0" and "disk_1" should be repaired.
      */
     int number_erasures = atoi(argv[2]);
-    int idx[n];
-    for (int i = 0; i < number_erasures; i++) {
+    int idx[number_erasures];
+    for (int i = 0; i < number_erasures; i++)
       idx[i] = atoi(argv[i + 3]);
-    }
     repair(number_erasures, idx);
   } else {
     printf("Non-supported operations!\n");
