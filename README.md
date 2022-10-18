@@ -27,30 +27,26 @@ Commit message 可以只写简要概括，但请不要写个 `git update` 或不
 * 写中文。我英语下手，请见谅。🙏
 
 ### 函数说明规范
+函数说明是非必要的，但对于较复杂的函数，推荐写函数说明。
+
 参考：
 
 ```c
 /**
- * @brief 读入文件 `file_name`，经 EVENODD 加密后储存
- * 从文件 `file_name` 读入数据并编码，然后将 ``p + 2`` 个数据块储存在 "disk_0",
- * "disk_1", ..., "disk_``p + 1``" 文件夹下。
- *
- * @param file_name 文件名
- * @param p 用于 EVENODD 加密的质数，应当保证 ``p <= 100``。
- *
+ * @brief 读入文件 file_name，经 EVENODD 加密后储存。
+ * 从文件 file_name 读入数据并编码，然后将 p + 2 个数据块储存在
+ * "disk_0", "disk_1", ..., "disk_{p + 1}" 文件夹下。
+ * @param file_name 文件名，长度不超过 100
+ * @param p 用于 EVENODD 加密的质数，应当为不超过 100 的整数
  * @return NULL
- *
  * @example write("testfile", 5);
- *
- * @todo(Tsukimaru): 需要讨论如何完善该函数的具体实现。
  */
 void write(const char *file_name, const int p) {
   // do something
 }
 ```
 
-* `@brief`：函数简介，通常不超过一行。
-* 具体描述：写在 `@brief` 正下方（可空一行）。
+* `@brief`：函数简介。
 * `@param`：参数描述，可以有多个 `@param`。
 * `@return`：返回值描述。
 * `@example`：使用样例，可以写注释。应当只有一个 `@example`，多个样例写多行即可。
