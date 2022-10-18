@@ -167,7 +167,7 @@ uint128 read_bits(struct Input *buffer, int n) {
  * // 新建一个 Output 类型结构体
  * struct Output output;
  *
- * // 初始化 output，缓存字节数为 1000 * 16 = 16000，向文件 "testfile" 写入数据
+ * // 初始化 output，缓存字节数为 1000，向文件 "testfile" 写入数据
  * init_output(output, 1000, "testfile");
  *
  * // 向输出文件写入 (1101)_2
