@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <dirent.h>
+#include <sys/types.h>
 
 typedef __uint128_t uint128;
 
@@ -19,7 +21,17 @@ typedef __uint128_t uint128;
     typeof(y) _y = (y);                                                        \
     _x < _y ? _x : _y;                                                         \
   })
+#define swap(x, y)                                                             \
+  ({                                                                           \
+    typeof(x) t = x;                                                           \
+    x = y;                                                                     \
+    y = t;                                                                     \
+  })                                                                           \
+
+#define mod_id(x,p) (((x) >= (p)) ? ((x) - (p)) : (((x) < 0) ? ((x) + (p)) : (x)))
 #define ALL1(n) (((uint128)1 << (n)) - 1)
+
+
 
 struct stat get_file_stat(const char *file_name) {
   struct stat file_stat;
@@ -56,7 +68,8 @@ const int MAX_IO_BUFFER_SIZE_SUM =
     1 << 24; // 函数内 IO 缓存区大小最大字节数（不严格），防止空间过大
 const int MAX_PER_IO_BUFFER_SIZE =
     1 << 20; // 单个 IO 缓存区大小最大字节数，防止缓存过大影响速度
-
+const int MAX_FILE_NAME_LENGTH =
+    120;     // 文件名的最大长度
 /**
  * @brief 用于进行二进制文件输入的结构体（带缓存区）。
  *
@@ -90,11 +103,12 @@ struct Input {
  * @return NULL
  */
 void init_input(struct Input *buffer, int size, const char *file_name) {
-  (*buffer).st = (char *)malloc(size);
-  (*buffer).ed = (*buffer).st + size;
-  (*buffer).p = (*buffer).ed;
-  (*buffer).file = fopen(file_name, "rb");
-  (*buffer).remain = 8;
+  size = min(size, get_file_stat(file_name).st_size);
+  buffer->st = (char *)malloc(size);
+  buffer->ed = buffer->st + size;
+  buffer->p = buffer->ed;
+  buffer->file = fopen(file_name, "rb");
+  buffer->remain = 8;
 }
 
 /**
@@ -103,10 +117,10 @@ void init_input(struct Input *buffer, int size, const char *file_name) {
  * @return NULL
  */
 void del_input(struct Input *buffer) {
-  fclose((*buffer).file);
-  free((*buffer).st);
-  (*buffer).st = (*buffer).ed = (*buffer).p = NULL;
-  (*buffer).file = NULL;
+  fclose(buffer->file);
+  free(buffer->st);
+  buffer->st = buffer->ed = buffer->p = NULL;
+  buffer->file = NULL;
 }
 
 /**
@@ -116,11 +130,11 @@ void del_input(struct Input *buffer) {
  * @return NULL
  */
 void flush_input(struct Input *buffer) {
-  assert((*buffer).p == (*buffer).ed);
-  memset((*buffer).st, 0, (*buffer).ed - (*buffer).st);
-  fread((*buffer).st, 1, (*buffer).ed - (*buffer).st, (*buffer).file);
-  (*buffer).remain = 8;
-  (*buffer).p = (*buffer).st;
+  assert(buffer->p == buffer->ed);
+  memset(buffer->st, 0, buffer->ed - buffer->st);
+  fread(buffer->st, 1, buffer->ed - buffer->st, buffer->file);
+  buffer->remain = 8;
+  buffer->p = buffer->st;
 }
 
 /**
@@ -133,29 +147,29 @@ void flush_input(struct Input *buffer) {
 uint128 read_bits(struct Input *buffer, int n) {
   uint128 result = 0;
 
-  if ((*buffer).p == (*buffer).ed)
+  if (buffer->p == buffer->ed)
     flush_input(buffer);
 
-  if (n < (*buffer).remain) {
-    (*buffer).remain -= n;
-    result = *(*buffer).p >> (*buffer).remain & ALL1(n);
+  if (n < buffer->remain) {
+    buffer->remain -= n;
+    result = *buffer->p >> buffer->remain & ALL1(n);
   } else {
-    result = *(*buffer).p & ALL1((*buffer).remain);
-    n -= (*buffer).remain;
-    (*buffer).p++;
+    result = *buffer->p & ALL1(buffer->remain);
+    n -= buffer->remain;
+    buffer->p++;
 
     while (n >= 8) {
-      if ((*buffer).p == (*buffer).ed)
+      if (buffer->p == buffer->ed)
         flush_input(buffer);
-      result = result << 8 | *(*buffer).p;
+      result = result << 8 | *buffer->p;
       n -= 8;
-      (*buffer).p++;
+      buffer->p++;
     }
 
-    if ((*buffer).p == (*buffer).ed)
+    if (buffer->p == buffer->ed)
       flush_input(buffer);
-    (*buffer).remain = 8 - n;
-    result = result << n | (*(*buffer).p >> (*buffer).remain & ALL1(n));
+    buffer->remain = 8 - n;
+    result = result << n | (*buffer->p >> buffer->remain & ALL1(n));
   }
   return result;
 }
@@ -192,14 +206,14 @@ struct Output {
  * @return NULL
  */
 void init_output(struct Output *buffer, int size, const char *file_name) {
-  (*buffer).st = (char *)malloc(size);
-  (*buffer).ed = (*buffer).st + size;
-  (*buffer).p = (*buffer).st;
+  buffer->st = (char *)malloc(size);
+  buffer->ed = buffer->st + size;
+  buffer->p = buffer->st;
 
   file_create(file_name);
-  (*buffer).file = fopen(file_name, "wb");
-  (*buffer).remain = 8;
-  memset((*buffer).st, 0, size);
+  buffer->file = fopen(file_name, "wb");
+  buffer->remain = 8;
+  memset(buffer->st, 0, size);
 }
 
 /**
@@ -209,13 +223,13 @@ void init_output(struct Output *buffer, int size, const char *file_name) {
  * @return NULL
  */
 void flush_output(struct Output *buffer) {
-  int bytes = (*buffer).p - (*buffer).st + ((*buffer).remain < 8);
+  int bytes = buffer->p - buffer->st + (buffer->remain < 8);
 
-  fwrite((*buffer).st, 1, bytes, (*buffer).file);
-  memset((*buffer).st, 0, bytes);
+  fwrite(buffer->st, 1, bytes, buffer->file);
+  memset(buffer->st, 0, bytes);
 
-  (*buffer).p = (*buffer).st;
-  (*buffer).remain = 8;
+  buffer->p = buffer->st;
+  buffer->remain = 8;
 }
 
 /**
@@ -225,10 +239,10 @@ void flush_output(struct Output *buffer) {
  */
 void del_output(struct Output *buffer) {
   flush_output(buffer);
-  fclose((*buffer).file);
-  free((*buffer).st);
-  (*buffer).st = (*buffer).ed = (*buffer).p = NULL;
-  (*buffer).file = NULL;
+  fclose(buffer->file);
+  free(buffer->st);
+  buffer->st = buffer->ed = buffer->p = NULL;
+  buffer->file = NULL;
 }
 
 /**
@@ -241,27 +255,178 @@ void del_output(struct Output *buffer) {
  */
 void write_bits(struct Output *buffer, uint128 x, int n) {
   x &= ALL1(n);
-  if (n < (*buffer).remain) {
-    (*buffer).remain -= n;
-    *(*buffer).p |= x << (*buffer).remain;
+  if (n < buffer->remain) {
+    buffer->remain -= n;
+    *buffer->p |= x << buffer->remain;
   } else {
-    n -= (*buffer).remain;
-    *(*buffer).p |= x >> n;
-    (*buffer).p++;
+    n -= buffer->remain;
+    *buffer->p |= x >> n;
+    buffer->p++;
 
     while (n >= 8) {
-      if ((*buffer).p == (*buffer).ed)
+      if (buffer->p == buffer->ed)
         flush_output(buffer);
       n -= 8;
-      *(*buffer).p = x >> n;
-      (*buffer).p++;
+      *buffer->p = x >> n;
+      buffer->p++;
     }
 
-    if ((*buffer).p == (*buffer).ed)
+    if (buffer->p == buffer->ed)
       flush_output(buffer);
-    (*buffer).remain = 8 - n;
-    *(*buffer).p = x << (*buffer).remain;
+    buffer->remain = 8 - n;
+    *buffer->p = x << buffer->remain;
   }
+}
+
+/**
+ * @brief 修复文件名为file_name 在 idx 磁盘的数据
+ * @param number_erasures 损坏文件夹个数 <=2
+ * @param idx 损坏文件夹的编号
+ * @param file_name 需要修复的文件名
+ * @param size 该文件原来的大小
+ * @param p 该文件对应的加密质数p
+ * @return NULL
+ * @example repair_work(2, [0,1], "testfile", size , 5);
+ */
+void repair_work(int number_erasures, int *idx, const char *file_name, 
+                 const long long size, const int p){
+              
+  bool check_disk[p + 2];//为 1 表示完好， 为 0 表示损坏
+  for (int i = 0; i < p + 2 ; i++)
+    check_disk[i] = true;
+  if (number_erasures == 2){ 
+    if (idx[1] > p + 1) number_erasures--; //去除对该文件没有影响的磁盘
+  }  
+  for (int i = 0; i < number_erasures; i++)
+    check_disk[idx[i]] = false;
+  
+  struct Input input[p + 2];
+  struct Output output[number_erasures];
+  uint128 a[p + 2];   // 0 ... (p + 1) 列的数据
+  char disk_file_name[MAX_FILE_NAME_LENGTH];
+  int now_output_id=0;
+
+  for (int i = 0 ;i < p + 2; i++){
+    sprintf(disk_file_name, "disk%d/%s", i, file_name);
+    if (check_disk[i] == true) {
+    
+      init_input(
+          &input[i],
+          min(MAX_PER_IO_BUFFER_SIZE, MAX_IO_BUFFER_SIZE_SUM),
+          disk_file_name);   //printf("%llu\n",a[i]);
+
+      read_bits(&input[i], 48);
+    }else {
+      init_output(
+          &output[now_output_id],
+          min(min(MAX_PER_IO_BUFFER_SIZE, MAX_IO_BUFFER_SIZE_SUM / (p + 2)),
+              size ),
+          disk_file_name);
+
+      write_bits(&output[now_output_id], size << 8 | p, 48);
+      now_output_id++;
+    }
+  }
+
+  for (long long t = 0; t < (size << 3); t += (p - 1) * p) {
+
+    for (int i = 0; i < p + 2; i++)
+    if (check_disk[i] == true) {
+      a[i] = read_bits(&input[i], p - 1);
+    }else {
+      a[i] = 0;
+    }
+    if (number_erasures == 1){ // 1 个文件损坏
+      
+      if (idx[0] == p){
+        for (int i = 0; i < p; i++)
+        a[p] ^= a[i];
+
+      }else
+      if (idx[0] == p + 1){
+        for (int i = 0; i < p; i++)
+          a[p + 1] ^= (a[i] << i) ^ (a[i] >> (p - i));
+        if (a[p + 1] >> (p - 1) & 1)
+          a[p + 1] = ~a[p+1];
+        a[p + 1] &= ALL1(p - 1);
+        
+      }else{
+        for (int i=0; i < p + 1; i++)
+        if (check_disk[i] == true) a[idx[0]] ^=a[i];
+      }
+      write_bits(&output[0], a[idx[0]], p - 1);
+    
+    }else {  // 2 个文件损坏
+      const int disk_i = idx[0], disk_j = idx[1];
+      if (disk_i == p && disk_j == p + 1){ //相当于重新加密
+        for (int i = 0; i < p; i++)
+        a[p] ^= a[i];
+        for (int i = 0; i < p; i++)
+          a[p + 1] ^= (a[i] << i) ^ (a[i] >> (p - i));
+        if (a[p + 1] >> (p - 1) & 1)
+          a[p + 1] = ~a[p+1];
+        a[p + 1] &= ALL1(p - 1);
+      }else
+      if (disk_i < p && disk_j == p){
+        uint128 S=0;  //对角线的 xor 和
+        for (int i = 0; i < p; i++)
+          S ^= (a[i] << i) ^ (a[i] >> (p - i));
+        
+        S &=ALL1(p);
+        
+        a[disk_i]= (S >> disk_i) ^ (a[p + 1] >> disk_i ) ^ (S << (p - disk_i)) ^ (a[p + 1] << (p - disk_i));
+        
+        if (((a[p + 1] >> mod_id(disk_i - 1, p)) & 1) ^ ((S >> mod_id(disk_i - 1, p)) & 1)) 
+          a[disk_i] = ~a[disk_i];
+        a[disk_i] &= ALL1(p - 1);
+        for (int i = 0; i < p; i++)
+        a[disk_j] ^=a[i];
+
+      }else
+      if (disk_i < p && disk_j == p + 1){ //由 a[p] 可以修复 disk_i 然后再求解a[p+1]
+        for (int i = 0; i < p + 1; i++)
+        if (check_disk[i] == true) a[disk_i] ^=a[i];
+        for (int i = 0; i < p; i++)
+          a[p + 1] ^= (a[i] << i) ^ (a[i] >> (p - i));
+        if (a[p + 1] >> (p - 1) & 1)
+          a[p + 1] = ~a[p+1];
+        a[p + 1] &= ALL1(p - 1);
+      }else
+      if (disk_i < p && disk_j < p){    
+        uint128 S = 0;  //对角线的 xor 和
+        bool syndromes = 0;
+
+        for (int i = 0; i < p; i++){
+          S ^= (a[i] << i) ^ (a[i] >> (p - i));
+          syndromes ^=((a[p] >> i) & 1) ^ ((a[p + 1] >> i) & 1);
+        }
+        S ^=a[p+1];
+        if (syndromes)
+          S = ~S;
+        S &= ALL1(p);
+        for (int i = 0; i < p; i++)
+          a[p] ^= a[i];
+        // 此时 a[p] 表示当前行丢失的两个数的 xor 值
+        // S 表示对角线上丢失的两个数的 xor 值
+        int now_diagonal_id = disk_j - 1, now_x = disk_j - disk_i -1;
+        for (int i=0; i < p; i++){
+          a[disk_i] ^= ((S >> now_diagonal_id) & 1) << now_x;
+          a[disk_j] ^= (((a[p] ^ a[disk_i]) >> now_x) &1) << now_x;
+
+          now_diagonal_id = mod_id(now_diagonal_id + disk_j - disk_i, p);
+          S ^= ((((a[p] ^ a[disk_i]) >> now_x) &1)) << now_diagonal_id;
+          now_x = mod_id(now_x + disk_j - disk_i, p);
+        } 
+      }
+      write_bits(&output[0], a[disk_i], p-1);
+      write_bits(&output[1], a[disk_j], p-1);
+    }
+  }
+
+  for (int i =0 ;i < p + 2; i++)
+  if (check_disk[i] == true) del_input(&input[i]);
+  for (int i = 0; i < number_erasures; i++)
+    del_output(&output[i]);
 }
 
 /**
@@ -288,7 +453,7 @@ void write(const char *file_name, const int p) {
       file_name);
 
   for (int i = 0; i < p + 2; i++) {
-    char disk_file_name[120];
+    char disk_file_name[MAX_FILE_NAME_LENGTH];
 
     sprintf(disk_file_name, "disk%d/%s", i, file_name);
     init_output(
@@ -330,7 +495,65 @@ void write(const char *file_name, const int p) {
 
 void read(const char *file_name, const char *save_as) {}
 
-void repair(const int number_erasures, const int *idx) {}
+
+/**
+ * @brief 已知损坏的文件夹个数 number_erasures 以及具体损坏文件夹的编号 idx, 修复磁盘
+ * @param number_erasures 损坏的文件夹个数，大于 2 时无法修复
+ * @param idx 具体损坏文件夹的编号
+ * @return NULL
+ * @example repair(2, [0,1]);
+ */
+
+void repair(const int number_erasures, int *idx) {
+  // 损坏文件夹个数大于 2 时无法修复
+  
+  if (number_erasures > 2){
+    printf("Too many corruptions!");
+    return;
+  }
+  if (number_erasures == 2){
+    if (idx[0]>idx[1]) swap(idx[0],idx[1]); //排序
+  }
+  
+  int disk_ok_id = 0; //找到一个完整磁盘，以获取需要修复的文件名
+
+  // 这部分是求mex 
+  for (int i = 0;i < number_erasures; i++)
+  if (idx[i]==disk_ok_id) disk_ok_id++;
+
+  char disk_ok_name[MAX_FILE_NAME_LENGTH];
+  sprintf(disk_ok_name, "disk%d", disk_ok_id);
+
+  DIR *disk_dir = opendir(disk_ok_name);
+  if (!disk_dir) { //未能成功打开此文件夹
+    printf("can't open a unbroken disk\n"); 
+    return;
+  }
+  struct dirent *file;
+  char file_name[MAX_FILE_NAME_LENGTH];
+  while ((file = readdir(disk_dir)) != NULL){
+
+    if (file->d_type == DT_REG) { //是普通文件时进行修复,否则可能找到 本级目录. 和 上级目录..
+      struct Input input;
+      long long file_size;
+
+      sprintf(file_name, "disk%d/%s", disk_ok_id, file->d_name);
+      
+      init_input(&input, 6, file_name);
+
+      file_size =read_bits(&input, 5 << 3);
+      int p=read_bits(&input, 1 << 3);
+
+      del_input(&input);
+      
+      repair_work(number_erasures, idx, file->d_name , file_size, p);
+    }
+    
+  }
+  closedir(disk_dir);
+
+}
+
 
 void usage() {
   printf("./evenodd write <file_name> <p>\n");
@@ -339,8 +562,8 @@ void usage() {
 }
 
 int main(int argc, char **argv) {
-  write("testfile", 3);
-  return 0;
+  //write("testfile", 3);
+  //return 0;
   if (argc < 2) {
     usage();
     return -1;
@@ -359,7 +582,7 @@ int main(int argc, char **argv) {
      * "p" is considered to be less or equal to 100.
      */
     write(argv[2], atoi(argv[3]));
-  } else if (strcmp(op, "read")) {
+  } else if (strcmp(op, "read") == 0) {
     /*
      * Please read the file specified by "file_name", and store it as a file
      * named "save_as" in the local file system.
@@ -368,7 +591,7 @@ int main(int argc, char **argv) {
      * should be a file named "tmp_file", which is the same as "testfile".
      */
     read(argv[2], argv[3]);
-  } else if (strcmp(op, "repair")) {
+  } else if (strcmp(op, "repair") == 0) {
     /*
      * Please repair failed disks. The number of failures is specified by
      * "num_erasures", and the index of disks are provided in the command
