@@ -87,7 +87,7 @@ const int MAX_FILE_NAME_LENGTH = 120; // 文件名的最大长度
  * del_input(input);
  */
 struct Input {
-  char *st, *ed, *p;
+  unsigned char *st, *ed, *p;
   FILE *file;
   int remain;
 };
@@ -100,9 +100,10 @@ struct Input {
  * @param file_name 文件名
  * @return NULL
  */
-void init_input(struct Input *buffer, int size, const char *file_name) {
+void init_input(struct Input *buffer, long long size, const char *file_name) {
   size = min(size, get_file_stat(file_name).st_size);
-  buffer->st = (char *)malloc(size);
+  size = min(size, MAX_PER_IO_BUFFER_SIZE);
+  buffer->st = (unsigned char *)malloc(size);
   buffer->ed = buffer->st + size;
   buffer->p = buffer->ed;
   buffer->file = fopen(file_name, "rb");
@@ -190,7 +191,7 @@ uint128 read_bits(struct Input *buffer, int n) {
  * del_input(output);
  */
 struct Output {
-  char *st, *ed, *p;
+  unsigned char *st, *ed, *p;
   FILE *file;
   int remain;
 };
@@ -203,8 +204,9 @@ struct Output {
  * @param file_name 文件名
  * @return NULL
  */
-void init_output(struct Output *buffer, int size, const char *file_name) {
-  buffer->st = (char *)malloc(size);
+void init_output(struct Output *buffer, long long size, const char *file_name) {
+  size = min(size, MAX_PER_IO_BUFFER_SIZE);
+  buffer->st = (unsigned char *)malloc(size);
   buffer->ed = buffer->st + size;
   buffer->p = buffer->st;
 
@@ -258,6 +260,7 @@ void write_bits(struct Output *buffer, uint128 x, int n) {
     *buffer->p |= x << buffer->remain;
   } else {
     n -= buffer->remain;
+    buffer->remain = 8;
     *buffer->p |= x >> n;
     buffer->p++;
 
@@ -309,20 +312,14 @@ void repair_work(int number_erasures, const int *idx, const char *file_name,
 
   for (int i = 0; i < p + 2; i++) {
     sprintf(disk_file_name, "disk%d/%s", i, file_name);
-    if (check_disk[i] == true) {
-
-      init_input(&input[i], min(MAX_PER_IO_BUFFER_SIZE, MAX_IO_BUFFER_SIZE_SUM),
-                 disk_file_name); // printf("%llu\n",a[i]);
-
-      read_bits(&input[i], 48);
+    if (check_disk[i]) {
+      init_input(&input[i], MAX_IO_BUFFER_SIZE_SUM / (p + 2), disk_file_name);
+      read_bits(&input[i], 6 << 3);
     } else {
-      init_output(
-          &output[now_output_id],
-          min(min(MAX_PER_IO_BUFFER_SIZE, MAX_IO_BUFFER_SIZE_SUM / (p + 2)),
-              size),
+      init_output(&output[now_output_id],
+                  min(MAX_IO_BUFFER_SIZE_SUM / (p + 2), size / p),
           disk_file_name);
-
-      write_bits(&output[now_output_id], size << 8 | p, 48);
+      write_bits(&output[now_output_id], size << 8 | p, 6 << 3);
       now_output_id++;
     }
   }
@@ -330,7 +327,7 @@ void repair_work(int number_erasures, const int *idx, const char *file_name,
   for (long long t = 0; t < (size << 3); t += (p - 1) * p) {
 
     for (int i = 0; i < p + 2; i++)
-      if (check_disk[i] == true) {
+      if (check_disk[i]) {
         a[i] = read_bits(&input[i], p - 1);
       } else {
         a[i] = 0;
@@ -424,7 +421,7 @@ void repair_work(int number_erasures, const int *idx, const char *file_name,
   }
 
   for (int i = 0; i < p + 2; i++)
-    if (check_disk[i] == true)
+    if (check_disk[i])
       del_input(&input[i]);
   for (int i = 0; i < number_erasures; i++)
     del_output(&output[i]);
@@ -448,19 +445,14 @@ void write(const char *file_name, const int p) {
 
   file_size = get_file_stat(file_name).st_size;
 
-  init_input(
-      &input,
-      min(min(MAX_PER_IO_BUFFER_SIZE, MAX_IO_BUFFER_SIZE_SUM), file_size),
-      file_name);
+  init_input(&input, file_size, file_name);
 
   for (int i = 0; i < p + 2; i++) {
     char disk_file_name[MAX_FILE_NAME_LENGTH];
 
     sprintf(disk_file_name, "disk%d/%s", i, file_name);
-    init_output(
-        &output[i],
-        min(min(MAX_PER_IO_BUFFER_SIZE, MAX_IO_BUFFER_SIZE_SUM / (p + 2)),
-            file_size),
+    init_output(&output[i],
+                min(MAX_IO_BUFFER_SIZE_SUM / (p + 2), file_size / p),
         disk_file_name);
 
     // 先将文件大小和 p 的值输出
