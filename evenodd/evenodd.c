@@ -280,29 +280,35 @@ void write_bits(struct Output *buffer, uint128 x, int n) {
 }
 
 /**
- * @brief 修复文件名为 file_name 在 idx 磁盘的数据
- * @param number_erasures 损坏文件夹个数 <=2
- * @param idx 损坏文件夹的编号
+ * @brief 修复文件名为 file_name 的数据。
  * @param file_name 需要修复的文件名
  * @param size 该文件原来的大小
  * @param p 该文件对应的加密质数 p
- * @return NULL
- * @example repair_work(2, [0,1], "testfile", size , 5);
+ * @param content_only 若为 true，则当损坏加密数据数不超过 2 且
+ * 编号为 0 ... (p - 1) 的加密数据完好时直接退出，不进行修复
+ * @return 损坏加密数据数是否不超过 2
+ * @example repair_work("testfile", size, 5, false);
  */
-void repair_work(int number_erasures, const int *idx, const char *file_name,
-                 const long long size, const int p) {
+bool repair_work(const char *file_name, const long long size, const int p,
+                 bool content_only) {
+  int number_erasures = 0;
+  int idx[2];
+  char disk_file_path[MAX_FILE_NAME_LENGTH];
 
-  bool check_disk[p + 2]; //为 1 表示完好， 为 0 表示损坏
-  for (int i = 0; i < p + 2; i++)
-    check_disk[i] = true;
-  if (number_erasures == 2) {
-    if (idx[1] > p + 1)
-      number_erasures--; //去除对该文件没有影响的磁盘
+  bool check_disk[p + 2]; // 为 true 表示完好，为 false 表示损坏
+  for (int i = 0; i < p + 2; i++) {
+    sprintf(disk_file_path, "disk%d/%s", i, file_name);
+    check_disk[i] = (access(disk_file_path, 0) == 0);
+    if (!check_disk[i]) {
+      if (number_erasures == 2)
+        return false;
+      idx[number_erasures] = i;
+      number_erasures++;
   }
-  if (idx[0] > p + 1)
-    return; //去除对该文件没有影响的磁盘, 两个磁盘没有影响就无需修改
-  for (int i = 0; i < number_erasures; i++)
-    check_disk[idx[i]] = false;
+  }
+
+  if (number_erasures == 0 || (content_only && idx[0] >= p))
+    return true;
 
   struct Input input[p + 2];
   struct Output output[number_erasures];
@@ -425,6 +431,7 @@ void repair_work(int number_erasures, const int *idx, const char *file_name,
       del_input(&input[i]);
   for (int i = 0; i < number_erasures; i++)
     del_output(&output[i]);
+  return true;
 }
 
 /**
