@@ -305,7 +305,7 @@ bool repair_work(const char *file_name, const long long size, const int p,
         return false;
       idx[number_erasures] = i;
       number_erasures++;
-  }
+    }
   }
 
   if (number_erasures == 0 || (content_only && idx[0] >= p))
@@ -325,7 +325,7 @@ bool repair_work(const char *file_name, const long long size, const int p,
     } else {
       init_output(&output[now_output_id],
                   min(MAX_IO_BUFFER_SIZE_SUM / (p + 2), size / p),
-          disk_file_name);
+                  disk_file_name);
       write_bits(&output[now_output_id], size << 8 | p, 6 << 3);
       now_output_id++;
     }
@@ -461,7 +461,7 @@ void write(const char *file_name, const int p) {
     sprintf(disk_file_name, "disk%d/%s", i, file_name);
     init_output(&output[i],
                 min(MAX_IO_BUFFER_SIZE_SUM / (p + 2), file_size / p),
-        disk_file_name);
+                disk_file_name);
 
     // 先将文件大小和 p 的值输出
     write_bits(&output[i], file_size << 8 | p, 48);
@@ -560,8 +560,8 @@ bool repair_directory(const char *dir_path) {
   DIR *root;
   struct dirent *sub_dir;
   char sub_dir_path[MAX_FILE_NAME_LENGTH];
-      struct Input input;
-      long long file_size;
+  struct Input input;
+  long long file_size;
   int p;
 
   root = opendir(dir_path);
@@ -607,7 +607,7 @@ void repair(const int number_erasures, const int *idx) {
   if (number_erasures > 2) {
     printf("Too many corruptions!\n");
     return;
-    }
+  }
 
   int disk_ok_id = 0; // 找到一个完整磁盘，以获取需要修复的文件名
 
