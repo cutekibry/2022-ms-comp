@@ -493,67 +493,77 @@ void write(const char *file_name, const int p) {
     del_output(&output[i]);
 }
 
-void read(const char *file_name, const char *save_as) {}
+/**
+ * @brief 修复加密数据文件夹
+ * @param dir_path 要修复的文件夹路径
+ * @return 是否成功修复
+ * @example repair_directory("disk1");
+ */
+bool repair_directory(const char *dir_path) {
+  DIR *root;
+  struct dirent *sub_dir;
+  char sub_dir_path[MAX_FILE_NAME_LENGTH];
+      struct Input input;
+      long long file_size;
+  int p;
+
+  root = opendir(dir_path);
+  while ((sub_dir = readdir(root)) != NULL) {
+    if (strcmp(sub_dir->d_name, ".") == 0 || strcmp(sub_dir->d_name, "..") == 0)
+      continue;
+
+    sprintf(sub_dir_path, "%s/%s", dir_path, sub_dir->d_name);
+
+    if (sub_dir->d_type == DT_DIR) {
+      if (!repair_directory(sub_dir_path))
+        return false;
+    } else {
+      int pos = 0; // 找到第一个斜杆出现的下标
+      while (sub_dir_path[pos] != '/')
+        pos++;
+
+      init_input(&input, 6, sub_dir_path);
+      file_size = read_bits(&input, 5 << 3);
+      p = read_bits(&input, 1 << 3);
+      del_input(&input);
+
+      if (!repair_work(sub_dir_path + pos + 1, file_size, p,
+                       false)) // 此处 sub_dir_path + pos + 1 即为原文件路径
+        return false;
+    }
+  }
+  closedir(root);
+  return true;
+}
 
 /**
  * @brief 已知损坏的文件夹个数 number_erasures 以及具体损坏文件夹的编号 idx,
  * 修复磁盘
  * @param number_erasures 损坏的文件夹个数，大于 2 时无法修复
- * @param idx 具体损坏文件夹的编号，因为进行了排序操作，因此没有使用 const int *
+ * @param idx 具体损坏文件夹的编号
  * @return NULL
- * @example repair(2, [0,1]);
+ * @example repair(2, [0, 1]);
  */
-
-void repair(const int number_erasures, int *idx) {
-  // 损坏文件夹个数大于 2 时无法修复
-
-  if (number_erasures > 2) {
-    printf("Too many corruptions!");
+void repair(const int number_erasures, const int *idx) {
+  if (number_erasures == 0)
     return;
-  }
-  //以下出现了对 idx 的修改！！
-  if (number_erasures == 2) {
-    if (idx[0] > idx[1])
-      swap(idx[0], idx[1]); //排序
-  }
+  if (number_erasures > 2) {
+    printf("Too many corruptions!\n");
+    return;
+    }
 
-  int disk_ok_id = 0; //找到一个完整磁盘，以获取需要修复的文件名
+  int disk_ok_id = 0; // 找到一个完整磁盘，以获取需要修复的文件名
 
   // 这部分是求 mex
-  for (int i = 0; i < number_erasures; i++)
-    if (idx[i] == disk_ok_id)
-      disk_ok_id++;
+  while (disk_ok_id == idx[0] || (number_erasures == 2 && disk_ok_id == idx[1]))
+    disk_ok_id++;
 
   char disk_ok_name[MAX_FILE_NAME_LENGTH];
   sprintf(disk_ok_name, "disk%d", disk_ok_id);
-
-  DIR *disk_dir = opendir(disk_ok_name);
-  if (!disk_dir) { //未能成功打开此文件夹
-    printf("can't open a unbroken disk\n");
+  if (!repair_directory(disk_ok_name)) {
+    printf("Too many corruptions!\n");
     return;
   }
-  struct dirent *file;
-  char file_name[MAX_FILE_NAME_LENGTH];
-  while ((file = readdir(disk_dir)) != NULL) {
-
-    if (file->d_type ==
-        DT_REG) { //是普通文件时进行修复,否则可能找到 本级目录 . 和 上级目录 ..
-      struct Input input;
-      long long file_size;
-
-      sprintf(file_name, "disk%d/%s", disk_ok_id, file->d_name);
-
-      init_input(&input, 6, file_name);
-
-      file_size = read_bits(&input, 5 << 3);
-      int p = read_bits(&input, 1 << 3);
-
-      del_input(&input);
-
-      repair_work(number_erasures, idx, file->d_name, file_size, p);
-    }
-  }
-  closedir(disk_dir);
 }
 
 void usage() {
