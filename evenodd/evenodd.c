@@ -67,7 +67,8 @@ const int MAX_IO_BUFFER_SIZE_SUM =
     1 << 24; // 函数内 IO 缓存区大小最大字节数（不严格），防止空间过大
 const int MAX_PER_IO_BUFFER_SIZE =
     1 << 20; // 单个 IO 缓存区大小最大字节数，防止缓存过大影响速度
-const int MAX_FILE_NAME_LENGTH = 120; // 文件名的最大长度
+const int MAX_FILE_NAME_LENGTH = 260; // 文件名的最大长度
+const int MAX_P = 100;                // p 的最大值
 /**
  * @brief 用于进行二进制文件输入的结构体（带缓存区）。
  *
@@ -491,6 +492,62 @@ void write(const char *file_name, const int p) {
   del_input(&input);
   for (int i = 0; i < p + 2; i++)
     del_output(&output[i]);
+}
+
+void read(const char *file_name, const char *save_as) {
+  long long file_size;
+  int p;
+  struct Input temp_input;
+  struct Output output;
+  char disk_file_path[MAX_FILE_NAME_LENGTH];
+  int disk_id;
+
+  disk_id = -1;
+  do {
+    disk_id++;
+    sprintf(disk_file_path, "disk%d/%s", disk_id, file_name);
+  } while (disk_id < MAX_P + 1 && access(disk_file_path, 0) == -1);
+  if (access(disk_file_path, 0) == -1) {
+    printf("File does not exist!\n");
+    return;
+  } else if (disk_id >= 3) {
+    printf("File corrupted!\n");
+    return;
+  }
+
+  init_input(&temp_input, 6, disk_file_path);
+  file_size = read_bits(&temp_input, 5 << 3);
+  p = read_bits(&temp_input, 1 << 3);
+  del_input(&temp_input);
+
+  if (!repair_work(file_name, file_size, p, true)) {
+    printf("File corrupted!\n");
+    return;
+  }
+
+  struct Input input[p];
+
+  for (int i = 0; i < p; i++) {
+    sprintf(disk_file_path, "disk%d/%s", i, file_name);
+    init_input(&input[i], MAX_IO_BUFFER_SIZE_SUM / p, disk_file_path);
+    read_bits(&input[i], 6 << 3);
+  }
+  init_output(&output, file_size, save_as);
+
+  file_size <<= 3;
+  disk_id = 0;
+  while (file_size > p - 1) {
+    write_bits(&output, read_bits(&input[disk_id], p - 1), p - 1);
+    disk_id++;
+    if (disk_id == p)
+      disk_id = 0;
+    file_size -= p - 1;
+  }
+  write_bits(&output, read_bits(&input[disk_id], file_size), file_size);
+
+  for (int i = 0; i < p; i++)
+    del_input(&input[i]);
+  del_output(&output);
 }
 
 /**
