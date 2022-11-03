@@ -6,14 +6,14 @@ import time
 import random
 import hashlib
 
-data_id = 0
+test_id = 0
 data_size = 0
 total_time = 0
 max_size = 0
 cur_seed = 0
 
-MAX_SIZE_LIMIT = 1 << 30 # 1GB
-SHOW_TIME = False # 不显示命令时间
+MAX_SIZE_LIMIT = 1 << 30  # 1GB
+SHOW_TIME = False  # 不显示命令时间
 
 
 def sha256(path):
@@ -24,14 +24,14 @@ def sha256(path):
             return sha256obj.hexdigest()
     else:
         sha256obj = hashlib.sha256()
-        sha256obj.update(' '.join([sha256(x) for x in sorted(Path(path).iterdir())]).encode())
+        sha256obj.update(
+            ' '.join([sha256(x) for x in sorted(Path(path).iterdir())]).encode())
         return sha256obj.hexdigest()
-        
 
 
 def add_time(command):
     global total_time
-    
+
     start = time.time()
     system(command)
     used = time.time() - start
@@ -39,9 +39,17 @@ def add_time(command):
         print(f'# `{command}` 用时 {used:.3f}s')
     total_time += used
 
-write = lambda file_name, p: add_time(f'./evenodd write {file_name} {p}')
-read = lambda file_name, save_as: add_time(f'./evenodd read {file_name} {save_as}')
-repair = lambda idx: add_time(f'./evenodd repair {len(idx)} {" ".join(map(str, idx))}')
+
+def write(file_name, p): return add_time(f'./evenodd write {file_name} {p}')
+
+
+def read(file_name, save_as): return add_time(
+    f'./evenodd read {file_name} {save_as}')
+
+
+def repair(idx): return add_time(
+    f'./evenodd repair {len(idx)} {" ".join(map(str, idx))}')
+
 
 def gen(file_bytes, file_name, seed):
     global data_size, max_size
@@ -50,26 +58,28 @@ def gen(file_bytes, file_name, seed):
     if data_size >= MAX_SIZE_LIMIT:
         raise RuntimeError("data size is over the limit")
     system(f'./gendata {file_bytes} {file_name} {seed}')
-    
 
-primes = [x for x in range(3, 101) if [y for y in range(2, x) if x % y == 0] == []]
+
+primes = [x for x in range(3, 101) if [
+    y for y in range(2, x) if x % y == 0] == []]
+
 
 def reset():
-    global data_id, data_size
+    global test_id, data_size
     system('rm -r disk* testfile* savefile* 2> /dev/null')
-    data_id = data_size = 0
+    data_size = 0
 
 
 def plain_rw_test(n, p):
-    global data_id, cur_seed
-    
-    data_id += 1
+    global test_id, cur_seed
+
+    test_id += 1
     cur_seed += 1
-    
-    testfile = f'testfile/test{data_id}'
-    savefile = f'savefile/save{data_id}'
-    
-    print(f'# 测试 {data_id}：n = {n}, p = {p}, seed = {cur_seed}')
+
+    testfile = f'testfile/test1'
+    savefile = f'savefile/save1'
+
+    print(f'# 测试 {test_id}：n = {n}, p = {p}, seed = {cur_seed}')
     gen(n, testfile, cur_seed)
     write(testfile, p)
     read(testfile, savefile)
@@ -80,22 +90,25 @@ def plain_rw_test(n, p):
         print(f'# 测试不通过，diff 返回值为 {return_code}')
         exit(-1)
 
-def broken_rw_test(n, p, idx, broke_type):
-    global data_id, cur_seed
-    
-    data_id += 1
-    cur_seed += 1
-    
-    testfile = f'testfile/test{data_id}'
-    savefile = f'savefile/save{data_id}'
 
-    print(f'# 测试 {data_id}：n = {n}, p = {p}, idx = {idx}, seed = {cur_seed}')
+def broken_rw_test(n, p, idx, broke_type):
+    global test_id, cur_seed
+
+    test_id += 1
+    cur_seed += 1
+
+    testfile = f'testfile/test1'
+    savefile = f'savefile/save1'
+
+    print(f'# 测试 {test_id}：n = {n}, p = {p}, idx = {idx}, seed = {cur_seed}')
     gen(n, testfile, cur_seed)
     write(testfile, p)
 
+    random.shuffle(idx)
+
     if broke_type:
         for x in idx:
-            system(f'rm disk{x}/testfile/test{data_id}')
+            system(f'rm disk{x}/{testfile}')
     else:
         for x in idx:
             system(f'rm -r disk{x}')
@@ -108,15 +121,16 @@ def broken_rw_test(n, p, idx, broke_type):
         print(f'# 测试不通过，diff 返回值为 {return_code}')
         exit(-1)
 
-repair_test_cnt = 0
+
 def repair_test(size, n, p, idx):
-    global cur_seed, repair_test_cnt
+    global cur_seed, test_id
 
     reset()
 
-    repair_test_cnt += 1
+    test_id += 1
 
-    print(f'# 测试 {repair_test_cnt}：size = {size}, n = {n}, p = {p}, idx = {idx}, seed = {cur_seed}')
+    print(
+        f'# 测试 {test_id}：size = {size}, n = {n}, p = {p}, idx = {idx}, seed = {cur_seed}')
 
     for i in range(1, n + 1):
         cur_seed += 1
@@ -138,21 +152,21 @@ def repair_test(size, n, p, idx):
     print(f'# 测试通过')
     reset()
 
-huge_test_cnt = 0
+
 def huge_test(n, p):
-    global cur_seed, huge_test_cnt, SHOW_TIME
+    global cur_seed, test_id, SHOW_TIME
 
     SHOW_TIME = True
 
     cur_seed += 1
-    huge_test_cnt += 1
-    
+    test_id += 1
+
     reset()
 
     testfile = f'testfile/test1'
     savefile = f'savefile/save1'
 
-    print(f'# 测试 {huge_test_cnt}：n = {n}, p = {p}, seed = {cur_seed}')
+    print(f'# 测试 {test_id}：n = {n}, p = {p}, seed = {cur_seed}')
     gen(n, testfile, cur_seed)
     write(testfile, p)
 
@@ -172,48 +186,62 @@ def huge_test(n, p):
 
 
 def subtask_plain_rw():
+    global test_id
+
+    test_id = 0
     reset()
 
     print('# 测试：无损 read/write')
 
     for p in primes[::2]:
-        for i in range(2, 8):
+        for i in range(2, 9):
             plain_rw_test(10 ** i, p)
+        reset()
     reset()
     print()
 
+
 def subtask_broken_rw():
+    global test_id
+
+    test_id = 0
     reset()
 
     print('# 测试：带损 read/write')
     p = 11
+
     broken_rw_test(400, p, [0], False)
     broken_rw_test(400, p, [1], True)
     broken_rw_test(400, p, [0, 1], False)
-    broken_rw_test(400, p, [2, 4], True)
- 
+    broken_rw_test(400, p, [3, 5], False)
+
     broken_rw_test(400, p, [p], False)
     broken_rw_test(400, p, [p + 1], True)
     broken_rw_test(400, p, [p, p + 1], False)
     broken_rw_test(400, p, [3, p], True)
-    broken_rw_test(400, p, [0, p + 1], False)
+    broken_rw_test(400, p, [2, p + 1], False)
 
     reset()
 
     for n in [10**5, 10**6, 10**7]:
         for p in [3, 5, 83, 89]:
+            i = random.randint(0, p - 2)
+            j = random.randint(i + 1, p - 1)
             broken_rw_test(n, p, [p], cur_seed & 1)
             broken_rw_test(n, p, [p, p + 1], cur_seed & 1)
             broken_rw_test(n, p, [p + 1], cur_seed & 1)
-            broken_rw_test(n, p, [0, p + 1], cur_seed & 1)
-            broken_rw_test(n, p, [0, p], cur_seed & 1)
-            broken_rw_test(n, p, [0, 1], cur_seed & 1)
-            broken_rw_test(n, p, [0], cur_seed & 1)
+            broken_rw_test(n, p, [i, p + 1], cur_seed & 1)
+            broken_rw_test(n, p, [i, p], cur_seed & 1)
+            broken_rw_test(n, p, [i, j], cur_seed & 1)
+            broken_rw_test(n, p, [i], cur_seed & 1)
             reset()
     print()
 
 
 def subtask_repair():
+    global test_id
+
+    test_id = 0
     print('# 测试：repair')
     for size in [10**4, 10**5, 10**6, 10 ** 7]:
         n = min(20, 10 ** 7 // size)
@@ -225,7 +253,11 @@ def subtask_repair():
         repair_test(size, n, [p] * n, [p + 1])
     print()
 
+
 def subtask_huge():
+    global test_id
+
+    test_id = 0
     print('# 测试：大数据 write / repair / read')
     n = 10 ** 8
     for p in primes:
