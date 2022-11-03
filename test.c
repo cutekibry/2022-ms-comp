@@ -264,7 +264,7 @@ void get_info(const char *file_path, long long *file_size, int *p) {
 
 #define CALC_PP1(res)                                                          \
   {                                                                            \
-    uint64 _b1[2 * p - 1];                                                     \
+    uint64 _b1[(p - 1) << 1];                                                  \
     memset(_b1, 0, sizeof(_b1));                                               \
     for (int _i = 0; _i < p; _i++)                                             \
       for (int _j = 0; _j < p - 1; _j++)                                       \
@@ -274,7 +274,7 @@ void get_info(const char *file_path, long long *file_size, int *p) {
   }
 #define CALC_DIAG(res)                                                         \
   {                                                                            \
-    uint64 _b1[2 * p - 1];                                                     \
+    uint64 _b1[(p - 1) << 1];                                                  \
     memset(_b1, 0, sizeof(_b1));                                               \
     for (int _i = 0; _i < p; _i++)                                             \
       for (int _j = 0; _j < p - 1; _j++)                                       \
@@ -373,16 +373,10 @@ bool repair_work(const char *file_name, const long long size, const int p,
         CALC_P(a[p])
         CALC_PP1(a[p + 1])
       } else if (disk_i < p && disk_j == p) {
-        uint64 S[p]; // 对角线的 xor
-        uint64 t;
+        uint64 S[p]; //对角线的 xor
         CALC_DIAG(S)
-        
         for (int l = 0; l < p - 1; l++)
-          S[l] ^= a[p + 1][l];
-
-        t = S[mod_p(disk_i - 1)];
-        for (int k = 0; k < p - 1; k++)
-          a[disk_i][k] = S[mod_p(disk_i + k - p)] ^ t;
+          a[disk_i][l] = S[l] ^ S[p - 1];
         CALC_P(a[p])
       } else if (disk_i < p &&
                  disk_j == p + 1) { // 由 a[p] 可以修复 disk_i 然后再求解 a[p+1]
@@ -394,7 +388,7 @@ bool repair_work(const char *file_name, const long long size, const int p,
 
         CALC_P(S0)
         for (int l = 0; l <= p - 1; l++) {
-          S0[l] ^= a[p][l];
+          S0[l] ^= a[p][l] ^ a[p + 1][l];
           S ^= a[p][l] ^ a[p + 1][l];
         }
 
@@ -608,6 +602,8 @@ void usage() {
 }
 
 int main(int argc, char **argv) {
+  repair_work("testfile/test1", 1, 3, false);
+  return 0;
   if (argc < 2) {
     usage();
     return -1;
