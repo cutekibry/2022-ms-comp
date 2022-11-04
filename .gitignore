@@ -3,3 +3,4 @@ evenodd/testfile
 evenodd/savefile
 evenodd/disk*
 .~lock*
+.vscode
