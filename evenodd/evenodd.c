@@ -51,7 +51,7 @@ void file_create(const char *file_name) {
 }
 
 const int MAX_IO_BUFFER_SIZE_SUM =
-    1 << 24; // 函数内 IO 缓存区大小最大字节数（不严格），防止空间过大
+    1 << 28; // 函数内 IO 缓存区大小最大字节数（不严格），防止空间过大
 const int MAX_PER_IO_BUFFER_SIZE =
     1 << 20; // 单个 IO 缓存区大小最大字节数，防止缓存过大影响速度
 const int MAX_FILE_NAME_LENGTH = 260; // 文件名的最大长度
@@ -75,7 +75,7 @@ const int MAX_P = 100;                // p 的最大值
  * del_input(input);
  */
 struct Input {
-  unsigned char *st, *ed, *p;
+  uint64 *st, *ed, *p;
   FILE *file;
   int remain;
 };
@@ -88,14 +88,28 @@ struct Input {
  * @param file_name 文件名
  * @return NULL
  */
-void init_input(struct Input *buffer, long long size, const char *file_name) {
+void init_input(struct Input *buffer, long long size, int n,
+                const char *file_name) {
   size = min64(size, get_file_stat(file_name).st_size);
   size = min64(size, MAX_PER_IO_BUFFER_SIZE);
-  size = ((size >> 3) + 1) << 3;
-  buffer->st = (unsigned char *)malloc(size);
+  size = ((size >> 3) / n + 1) * n;
+  buffer->st = (uint64 *)malloc(size << 3);
   buffer->ed = buffer->st + size;
   buffer->p = buffer->ed;
   buffer->file = fopen(file_name, "rb");
+}
+
+/**
+ * @brief 从文件读入足量字符填充缓存区。需要保证缓存区已全部用尽。
+ * 一般不需要手动调用此函数，当缓存区用完时会自动调用。
+ * @param buffer 指向 Input 的指针
+ * @return NULL
+ */
+void flush_input(struct Input *buffer) {
+  assert(buffer->p == buffer->ed);
+  memset(buffer->st, 0, (buffer->ed - buffer->st) << 3);
+  fread(buffer->st, 1, (buffer->ed - buffer->st) << 3, buffer->file);
+  buffer->p = buffer->st;
 }
 
 /**
@@ -110,48 +124,15 @@ void del_input(struct Input *buffer) {
   buffer->file = NULL;
 }
 
-/**
- * @brief 从文件读入足量字符填充缓存区。需要保证缓存区已全部用尽。
- * 一般不需要手动调用此函数，当缓存区用完时会自动调用。
- * @param buffer 指向 Input 的指针
- * @return NULL
- */
-void flush_input(struct Input *buffer) {
-  assert(buffer->p == buffer->ed);
-  memset(buffer->st, 0, buffer->ed - buffer->st);
-  fread(buffer->st, 1, buffer->ed - buffer->st, buffer->file);
-  buffer->p = buffer->st;
+uint64 read_uint64_direct(struct Input *buffer) {
+  uint64 x;
+  fread(&x, 1, 8, buffer->file);
+  return x;
 }
-
-/**
- * @brief 从 Input 读入 n 个 bool 并返回。
- * 若读入的 bool 分别为 x_0, x_1, ..., x_n，则返回的值为 (x_0x_1...x_n)_2。
- * @param buffer 指向 Input 的指针
- * @param n 读入 bool 个数，不超过 128
- * @return 由读入的 n 个 bool 构成的整数
- */
-char read_char(struct Input *buffer) {
-  if (buffer->p == buffer->ed)
-    flush_input(buffer);
-  return *(buffer->p++);
-}
-uint64 read_uint64(struct Input *buffer) {
-  uint64 result = 0;
-  if (buffer->p == buffer->ed)
-    flush_input(buffer);
-  result = (result << 8) | *(buffer->p++);
-  result = (result << 8) | *(buffer->p++);
-  result = (result << 8) | *(buffer->p++);
-  result = (result << 8) | *(buffer->p++);
-  result = (result << 8) | *(buffer->p++);
-  result = (result << 8) | *(buffer->p++);
-  result = (result << 8) | *(buffer->p++);
-  result = (result << 8) | *(buffer->p++);
-  return result;
-}
-void read_array(uint64 *a, struct Input *buffer, int n) {
-  for (int i = 0; i < n; i++)
-    a[i] = read_uint64(buffer);
+uint64 read_uint64_unsafe(struct Input *buffer) { return *(buffer->p++); }
+void read_array_unsafe(uint64 *a, struct Input *buffer, int n) {
+  memcpy(a, buffer->p, n << 3);
+  buffer->p += n;
 }
 
 /**
@@ -172,7 +153,7 @@ void read_array(uint64 *a, struct Input *buffer, int n) {
  * del_input(output);
  */
 struct Output {
-  unsigned char *st, *ed, *p;
+  uint64 *st, *ed, *p;
   FILE *file;
 };
 
@@ -184,16 +165,16 @@ struct Output {
  * @param file_name 文件名
  * @return NULL
  */
-void init_output(struct Output *buffer, long long size, const char *file_name) {
+void init_output(struct Output *buffer, long long size, int n,
+                 const char *file_name) {
   size = min64(size, MAX_PER_IO_BUFFER_SIZE);
-  size = ((size >> 3) + 1) << 3;
-  buffer->st = (unsigned char *)malloc(size);
+  size = ((size >> 3) / n + 1) * n;
+  buffer->st = (uint64 *)malloc(size << 3);
   buffer->ed = buffer->st + size;
   buffer->p = buffer->st;
 
   file_create(file_name);
   buffer->file = fopen(file_name, "wb");
-  memset(buffer->st, 0, size);
 }
 
 /**
@@ -203,8 +184,7 @@ void init_output(struct Output *buffer, long long size, const char *file_name) {
  * @return NULL
  */
 void flush_output(struct Output *buffer) {
-  fwrite(buffer->st, 1, buffer->p - buffer->st, buffer->file);
-  memset(buffer->st, 0, buffer->p - buffer->st);
+  fwrite(buffer->st, 1, (buffer->p - buffer->st) << 3, buffer->file);
   buffer->p = buffer->st;
 }
 
@@ -221,45 +201,29 @@ void del_output(struct Output *buffer) {
   buffer->file = NULL;
 }
 
-/**
- * @brief 向 Output 输出 n 个 bool。
- * 令 x = (y_0y_1...y_{n - 1})_2，输出 y_0y_1...y_{n - 1}。
- * @param buffer 指向 Output 的指针
- * @param x 输出 bool 的值
- * @param n 输出 bool 的个数
- * @return NULL
- */
-void write_char(struct Output *buffer, char x) {
-  if (buffer->p == buffer->ed)
-    flush_output(buffer);
-  *(buffer->p++) = x;
+void write_uint64_direct(struct Output *buffer, uint64 x) {
+  fwrite(&x, 1, 8, buffer->file);
 }
-void write_uint64(struct Output *buffer, uint64 x) {
-  if (buffer->p == buffer->ed)
-    flush_output(buffer);
-  *(buffer->p++) = x >> 56 & 255;
-  *(buffer->p++) = x >> 48 & 255;
-  *(buffer->p++) = x >> 40 & 255;
-  *(buffer->p++) = x >> 32 & 255;
-  *(buffer->p++) = x >> 24 & 255;
-  *(buffer->p++) = x >> 16 & 255;
-  *(buffer->p++) = x >> 8 & 255;
-  *(buffer->p++) = x >> 0 & 255;
+void write_bytes_direct(struct Output *buffer, uint64 x, int n) {
+  while (n--) {
+    fputc(x & 255, buffer->file);
+    x >>= 8;
+  }
 }
-void write_array(struct Output *buffer, uint64 *a, int n) {
-  for (int i = 0; i < n; i++)
-    write_uint64(buffer, a[i]);
+void write_array_unsafe(struct Output *buffer, uint64 *a, int n) {
+  memcpy(buffer->p, a, n << 3);
+  buffer->p += n;
 }
 
 void get_info(const char *file_path, long long *file_size, int *p) {
-  struct Input input;
+  FILE *file;
   uint64 x;
 
-  init_input(&input, 8, file_path);
-  x = read_uint64(&input);
+  file = fopen(file_path, "rb");
+  fread(&x, 1, 8, file);
   *file_size = x >> 8;
   *p = x & 255;
-  del_input(&input);
+  fclose(file);
 }
 
 #define CALC_PP1(res)                                                          \
@@ -312,7 +276,7 @@ void get_info(const char *file_path, long long *file_size, int *p) {
 bool repair_work(const char *file_name, const long long size, const int p,
                  bool content_only) {
   int number_erasures = 0;
-  int idx[2];
+  int idx[2], ok_id = 0;
   char disk_file_path[MAX_FILE_NAME_LENGTH];
 
   bool check_disk[p + 2]; // 为 true 表示完好，为 false 表示损坏
@@ -324,7 +288,8 @@ bool repair_work(const char *file_name, const long long size, const int p,
         return false;
       idx[number_erasures] = i;
       number_erasures++;
-    }
+    } else
+      ok_id = i;
   }
 
   if (number_erasures == 0 || (content_only && idx[0] >= p))
@@ -339,21 +304,28 @@ bool repair_work(const char *file_name, const long long size, const int p,
   for (int i = 0; i < p + 2; i++) {
     sprintf(disk_file_name, "disk%d/%s", i, file_name);
     if (check_disk[i]) {
-      init_input(&input[i], MAX_IO_BUFFER_SIZE_SUM / (p + 2), disk_file_name);
-      read_uint64(&input[i]);
+      init_input(&input[i], MAX_IO_BUFFER_SIZE_SUM / (p + 2), p - 1,
+                 disk_file_name);
+      read_uint64_direct(&input[i]);
+      flush_input(&input[i]);
     } else {
       init_output(&output[now_output_id],
-                  min64(MAX_IO_BUFFER_SIZE_SUM / (p + 2), size / p),
+                  min64(MAX_IO_BUFFER_SIZE_SUM / 2, size / p), p - 1,
                   disk_file_name);
-      write_uint64(&output[now_output_id], size << 8 | p);
+      write_uint64_direct(&output[now_output_id], size << 8 | p);
       now_output_id++;
     }
   }
 
   for (long long t = 0; t < (size << 3); t += 64 * (p - 1) * p) {
+    if (input[ok_id].p == input[ok_id].ed)
+      for (int i = 0; i < p + 2; i++)
+        if (check_disk[i])
+          flush_input(&input[i]);
+
     for (int i = 0; i < p + 2; i++)
       if (check_disk[i]) {
-        read_array(a[i], &input[i], p - 1);
+        read_array_unsafe(a[i], &input[i], p - 1);
         a[i][p - 1] = 0;
       } else
         memset(a[i], 0, sizeof(a[i]));
@@ -365,7 +337,9 @@ bool repair_work(const char *file_name, const long long size, const int p,
         CALC_PP1(a[p + 1])
       else
         CALC_I(a[idx[0]])
-      write_array(&output[0], a[idx[0]], p - 1);
+      if (output[0].p == output[0].ed)
+        flush_output(&output[0]);
+      write_array_unsafe(&output[0], a[idx[0]], p - 1);
 
     } else { // 2 个文件损坏
       const int disk_i = idx[0], disk_j = idx[1];
@@ -410,8 +384,12 @@ bool repair_work(const char *file_name, const long long size, const int p,
           s = mod_p(s - ji);
         } while (s != p - 1);
       }
-      write_array(&output[0], a[disk_i], p - 1);
-      write_array(&output[1], a[disk_j], p - 1);
+      if (output[0].p == output[0].ed) {
+        flush_output(&output[0]);
+        flush_output(&output[1]);
+      }
+      write_array_unsafe(&output[0], a[disk_i], p - 1);
+      write_array_unsafe(&output[1], a[disk_j], p - 1);
     }
   }
 
@@ -440,30 +418,36 @@ void write(const char *file_name, const int p) {
 
   file_size = get_file_stat(file_name).st_size;
 
-  init_input(&input, file_size, file_name);
+  init_input(&input, file_size, p * (p - 1), file_name);
+  flush_input(&input);
 
   for (int i = 0; i < p + 2; i++) {
     char disk_file_name[MAX_FILE_NAME_LENGTH];
 
     sprintf(disk_file_name, "disk%d/%s", i, file_name);
     init_output(&output[i],
-                min64(MAX_IO_BUFFER_SIZE_SUM / (p + 2), file_size / p),
+                min64(MAX_IO_BUFFER_SIZE_SUM / (p + 2), file_size / p), p - 1,
                 disk_file_name);
 
     // 先将文件大小和 p 的值输出
-    write_uint64(&output[i], file_size << 8 | p);
+    write_uint64_direct(&output[i], file_size << 8 | p);
   }
 
   // 开始加密
   for (long long t = 0; t < (file_size << 3); t += 64 * (p - 1) * p) {
+    if (input.p == input.ed)
+      flush_input(&input);
     for (int i = 0; i < p; i++)
-      read_array(a[i], &input, p - 1);
+      read_array_unsafe(a[i], &input, p - 1);
 
     CALC_P(a[p])
     CALC_PP1(a[p + 1])
 
+    if (output[0].p == output[0].ed)
+      for (int i = 0; i < p + 2; i++)
+        flush_output(&output[i]);
     for (int i = 0; i < p + 2; i++)
-      write_array(&output[i], a[i], p - 1);
+      write_array_unsafe(&output[i], a[i], p - 1);
   }
 
   del_input(&input);
@@ -503,28 +487,34 @@ void read(const char *file_name, const char *save_as) {
 
   for (int i = 0; i < p; i++) {
     sprintf(disk_file_path, "disk%d/%s", i, file_name);
-    init_input(&input[i], MAX_IO_BUFFER_SIZE_SUM / p, disk_file_path);
-    read_uint64(&input[i]);
+    init_input(&input[i], MAX_IO_BUFFER_SIZE_SUM / p, p - 1, disk_file_path);
+    read_uint64_direct(&input[i]);
+    flush_input(&input[i]);
   }
-  init_output(&output, file_size, save_as);
+  init_output(&output, file_size, p - 1, save_as);
 
   int i = 0;
-  int j = 0;
-  while (file_size > 8) {
-    write_uint64(&output, read_uint64(&input[i]));
-    j++;
-    if (j == p - 1) {
-      j = 0;
-      i++;
-      if (i == p)
-        i = 0;
+  while (file_size >= 8 * (p - 1)) {
+    if (input[0].ed == input[0].p)
+      for (i = 0; i < p; i++)
+        flush_input(&input[i]);
+    for (i = 0; i < p && file_size >= 8 * (p - 1); i++) {
+      if (output.ed == output.p)
+        flush_output(&output);
+      write_array_unsafe(&output, input[i].p, p - 1);
+      input[i].p += p - 1;
+      file_size -= 8 * (p - 1);
     }
-    file_size -= 8;
   }
-  while (file_size > 0) {
-    write_char(&output, read_char(&input[i]));
-    file_size--;
-  }
+  i = i % p;
+  if (output.ed == output.p)
+    flush_output(&output);
+  if (input[i].ed == input[i].p)
+    flush_input(&input[i]);
+  write_array_unsafe(&output, input[i].p, file_size >> 3);
+  input[i].p += file_size >> 3;
+  flush_output(&output);
+  write_bytes_direct(&output, read_uint64_unsafe(&input[i]), file_size & 7);
 
   for (int i = 0; i < p; i++)
     del_input(&input[i]);
@@ -608,6 +598,9 @@ void usage() {
 }
 
 int main(int argc, char **argv) {
+  // int id[]= {0};
+  // repair(1, id);
+  // return 0;
   if (argc < 2) {
     usage();
     return -1;
