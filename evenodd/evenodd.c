@@ -7,30 +7,17 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-typedef __uint128_t uint128;
+#define ALL1(x) -1
 
-#define max(x, y)                                                              \
-  ({                                                                           \
-    typeof(x) _x = (x);                                                        \
-    typeof(y) _y = (y);                                                        \
-    _x > _y ? _x : _y;                                                         \
-  })
-#define min(x, y)                                                              \
-  ({                                                                           \
-    typeof(x) _x = (x);                                                        \
-    typeof(y) _y = (y);                                                        \
-    _x < _y ? _x : _y;                                                         \
-  })
-#define swap(x, y)                                                             \
-  ({                                                                           \
-    typeof(x) t = x;                                                           \
-    x = y;                                                                     \
-    y = t;                                                                     \
-  })
+typedef __uint128_t uint128;
+typedef unsigned long long uint64;
+
+long long min64(long long x, long long y) { return x < y ? x : y; }
 
 #define mod_id(x, p)                                                           \
   (((x) >= (p)) ? ((x) - (p)) : (((x) < 0) ? ((x) + (p)) : (x)))
-#define ALL1(n) (((uint128)1 << (n)) - 1)
+
+#define mod_p(x) (((x) < 0) ? ((x) + p) : (x))
 
 struct stat get_file_stat(const char *file_name) {
   struct stat file_stat;
@@ -97,18 +84,18 @@ struct Input {
  * @brief 初始化 Input。
  * 为 (*buffer) 申请 size 字节的空间，设置其输入文件名为 file_name。
  * @param buffer 指向 Input 的指针
- * @param size 申请字节大小
+ * @param size 申请字节大小（会自动变为 ceil(size / 8) * 8）
  * @param file_name 文件名
  * @return NULL
  */
 void init_input(struct Input *buffer, long long size, const char *file_name) {
-  size = min(size, get_file_stat(file_name).st_size);
-  size = min(size, MAX_PER_IO_BUFFER_SIZE);
+  size = min64(size, get_file_stat(file_name).st_size);
+  size = min64(size, MAX_PER_IO_BUFFER_SIZE);
+  size = ((size >> 3) + 1) << 3;
   buffer->st = (unsigned char *)malloc(size);
   buffer->ed = buffer->st + size;
   buffer->p = buffer->ed;
   buffer->file = fopen(file_name, "rb");
-  buffer->remain = 8;
 }
 
 /**
@@ -133,7 +120,6 @@ void flush_input(struct Input *buffer) {
   assert(buffer->p == buffer->ed);
   memset(buffer->st, 0, buffer->ed - buffer->st);
   fread(buffer->st, 1, buffer->ed - buffer->st, buffer->file);
-  buffer->remain = 8;
   buffer->p = buffer->st;
 }
 
@@ -144,34 +130,28 @@ void flush_input(struct Input *buffer) {
  * @param n 读入 bool 个数，不超过 128
  * @return 由读入的 n 个 bool 构成的整数
  */
-uint128 read_bits(struct Input *buffer, int n) {
-  uint128 result = 0;
-
+char read_char(struct Input *buffer) {
   if (buffer->p == buffer->ed)
     flush_input(buffer);
-
-  if (n < buffer->remain) {
-    buffer->remain -= n;
-    result = *buffer->p >> buffer->remain & ALL1(n);
-  } else {
-    result = *buffer->p & ALL1(buffer->remain);
-    n -= buffer->remain;
-    buffer->p++;
-
-    while (n >= 8) {
-      if (buffer->p == buffer->ed)
-        flush_input(buffer);
-      result = result << 8 | *buffer->p;
-      n -= 8;
-      buffer->p++;
-    }
-
-    if (buffer->p == buffer->ed)
-      flush_input(buffer);
-    buffer->remain = 8 - n;
-    result = result << n | (*buffer->p >> buffer->remain & ALL1(n));
-  }
+  return *(buffer->p++);
+}
+uint64 read_uint64(struct Input *buffer) {
+  uint64 result = 0;
+  if (buffer->p == buffer->ed)
+    flush_input(buffer);
+  result = (result << 8) | *(buffer->p++);
+  result = (result << 8) | *(buffer->p++);
+  result = (result << 8) | *(buffer->p++);
+  result = (result << 8) | *(buffer->p++);
+  result = (result << 8) | *(buffer->p++);
+  result = (result << 8) | *(buffer->p++);
+  result = (result << 8) | *(buffer->p++);
+  result = (result << 8) | *(buffer->p++);
   return result;
+}
+void read_array(uint64 *a, struct Input *buffer, int n) {
+  for (int i = 0; i < n; i++)
+    a[i] = read_uint64(buffer);
 }
 
 /**
@@ -194,7 +174,6 @@ uint128 read_bits(struct Input *buffer, int n) {
 struct Output {
   unsigned char *st, *ed, *p;
   FILE *file;
-  int remain;
 };
 
 /**
@@ -206,14 +185,14 @@ struct Output {
  * @return NULL
  */
 void init_output(struct Output *buffer, long long size, const char *file_name) {
-  size = min(size, MAX_PER_IO_BUFFER_SIZE);
+  size = min64(size, MAX_PER_IO_BUFFER_SIZE);
+  size = ((size >> 3) + 1) << 3;
   buffer->st = (unsigned char *)malloc(size);
   buffer->ed = buffer->st + size;
   buffer->p = buffer->st;
 
   file_create(file_name);
   buffer->file = fopen(file_name, "wb");
-  buffer->remain = 8;
   memset(buffer->st, 0, size);
 }
 
@@ -224,13 +203,9 @@ void init_output(struct Output *buffer, long long size, const char *file_name) {
  * @return NULL
  */
 void flush_output(struct Output *buffer) {
-  int bytes = buffer->p - buffer->st + (buffer->remain < 8);
-
-  fwrite(buffer->st, 1, bytes, buffer->file);
-  memset(buffer->st, 0, bytes);
-
+  fwrite(buffer->st, 1, buffer->p - buffer->st, buffer->file);
+  memset(buffer->st, 0, buffer->p - buffer->st);
   buffer->p = buffer->st;
-  buffer->remain = 8;
 }
 
 /**
@@ -254,31 +229,75 @@ void del_output(struct Output *buffer) {
  * @param n 输出 bool 的个数
  * @return NULL
  */
-void write_bits(struct Output *buffer, uint128 x, int n) {
-  x &= ALL1(n);
-  if (n < buffer->remain) {
-    buffer->remain -= n;
-    *buffer->p |= x << buffer->remain;
-  } else {
-    n -= buffer->remain;
-    buffer->remain = 8;
-    *buffer->p |= x >> n;
-    buffer->p++;
-
-    while (n >= 8) {
-      if (buffer->p == buffer->ed)
-        flush_output(buffer);
-      n -= 8;
-      *buffer->p = x >> n;
-      buffer->p++;
-    }
-
-    if (buffer->p == buffer->ed)
-      flush_output(buffer);
-    buffer->remain = 8 - n;
-    *buffer->p = x << buffer->remain;
-  }
+void write_char(struct Output *buffer, char x) {
+  if (buffer->p == buffer->ed)
+    flush_output(buffer);
+  *(buffer->p++) = x;
 }
+void write_uint64(struct Output *buffer, uint64 x) {
+  if (buffer->p == buffer->ed)
+    flush_output(buffer);
+  *(buffer->p++) = x >> 56 & 255;
+  *(buffer->p++) = x >> 48 & 255;
+  *(buffer->p++) = x >> 40 & 255;
+  *(buffer->p++) = x >> 32 & 255;
+  *(buffer->p++) = x >> 24 & 255;
+  *(buffer->p++) = x >> 16 & 255;
+  *(buffer->p++) = x >> 8 & 255;
+  *(buffer->p++) = x >> 0 & 255;
+}
+void write_array(struct Output *buffer, uint64 *a, int n) {
+  for (int i = 0; i < n; i++)
+    write_uint64(buffer, a[i]);
+}
+
+void get_info(const char *file_path, long long *file_size, int *p) {
+  struct Input input;
+  uint64 x;
+
+  init_input(&input, 8, file_path);
+  x = read_uint64(&input);
+  *file_size = x >> 8;
+  *p = x & 255;
+  del_input(&input);
+}
+
+#define CALC_PP1(res)                                                          \
+  {                                                                            \
+    uint64 _b1[2 * p - 1];                                                     \
+    memset(_b1, 0, sizeof(_b1));                                               \
+    for (int _i = 0; _i < p; _i++)                                             \
+      for (int _j = 0; _j < p - 1; _j++)                                       \
+        _b1[_i + _j] ^= a[_i][_j];                                             \
+    for (int _i = 0; _i < p - 1; _i++)                                         \
+      res[_i] = _b1[_i] ^ _b1[p - 1] ^ _b1[_i + p];                            \
+  }
+#define CALC_DIAG(res)                                                         \
+  {                                                                            \
+    uint64 _b1[2 * p - 1];                                                     \
+    memset(_b1, 0, sizeof(_b1));                                               \
+    for (int _i = 0; _i < p; _i++)                                             \
+      for (int _j = 0; _j < p - 1; _j++)                                       \
+        _b1[_i + _j] ^= a[_i][_j];                                             \
+    for (int _i = 0; _i < p - 1; _i++)                                         \
+      res[_i] = _b1[_i] ^ _b1[_i + p];                                         \
+    res[p - 1] = _b1[p - 1];                                                   \
+  }
+#define CALC_P(res)                                                            \
+  {                                                                            \
+    memset(res, 0, sizeof(res));                                               \
+    for (int _i = 0; _i < p; _i++)                                             \
+      for (int _j = 0; _j < p - 1; _j++)                                       \
+        res[_j] ^= a[_i][_j];                                                  \
+  }
+#define CALC_I(res)                                                            \
+  {                                                                            \
+    memset(res, 0, sizeof(res));                                               \
+    for (int _i = 0; _i < p + 1; _i++)                                         \
+      if (check_disk[_i])                                                      \
+        for (int _j = 0; _j < p - 1; _j++)                                     \
+          res[_j] ^= a[_i][_j];                                                \
+  }
 
 /**
  * @brief 修复文件名为 file_name 的数据。
@@ -313,7 +332,7 @@ bool repair_work(const char *file_name, const long long size, const int p,
 
   struct Input input[p + 2];
   struct Output output[number_erasures];
-  uint128 a[p + 2]; // 0 ... (p + 1) 列的数据
+  uint64 a[p + 2][p]; // 0 ... (p + 1) 列的数据
   char disk_file_name[MAX_FILE_NAME_LENGTH];
   int now_output_id = 0;
 
@@ -321,109 +340,78 @@ bool repair_work(const char *file_name, const long long size, const int p,
     sprintf(disk_file_name, "disk%d/%s", i, file_name);
     if (check_disk[i]) {
       init_input(&input[i], MAX_IO_BUFFER_SIZE_SUM / (p + 2), disk_file_name);
-      read_bits(&input[i], 6 << 3);
+      read_uint64(&input[i]);
     } else {
       init_output(&output[now_output_id],
-                  min(MAX_IO_BUFFER_SIZE_SUM / (p + 2), size / p),
+                  min64(MAX_IO_BUFFER_SIZE_SUM / (p + 2), size / p),
                   disk_file_name);
-      write_bits(&output[now_output_id], size << 8 | p, 6 << 3);
+      write_uint64(&output[now_output_id], size << 8 | p);
       now_output_id++;
     }
   }
 
-  for (long long t = 0; t < (size << 3); t += (p - 1) * p) {
-
+  for (long long t = 0; t < (size << 3); t += 64 * (p - 1) * p) {
     for (int i = 0; i < p + 2; i++)
       if (check_disk[i]) {
-        a[i] = read_bits(&input[i], p - 1);
-      } else {
-        a[i] = 0;
-      }
+        read_array(a[i], &input[i], p - 1);
+        a[i][p - 1] = 0;
+      } else
+        memset(a[i], 0, sizeof(a[i]));
+
     if (number_erasures == 1) { // 1 个文件损坏
-
-      if (idx[0] == p) {
-        for (int i = 0; i < p; i++)
-          a[p] ^= a[i];
-
-      } else if (idx[0] == p + 1) {
-        for (int i = 0; i < p; i++)
-          a[p + 1] ^= (a[i] << i) ^ (a[i] >> (p - i));
-        if (a[p + 1] >> (p - 1) & 1)
-          a[p + 1] = ~a[p + 1];
-        a[p + 1] &= ALL1(p - 1);
-
-      } else {
-        for (int i = 0; i < p + 1; i++)
-          if (check_disk[i] == true)
-            a[idx[0]] ^= a[i];
-      }
-      write_bits(&output[0], a[idx[0]], p - 1);
+      if (idx[0] == p)
+        CALC_P(a[p])
+      else if (idx[0] == p + 1)
+        CALC_PP1(a[p + 1])
+      else
+        CALC_I(a[idx[0]])
+      write_array(&output[0], a[idx[0]], p - 1);
 
     } else { // 2 个文件损坏
       const int disk_i = idx[0], disk_j = idx[1];
-      if (disk_i == p && disk_j == p + 1) { //相当于重新加密
-        for (int i = 0; i < p; i++)
-          a[p] ^= a[i];
-        for (int i = 0; i < p; i++)
-          a[p + 1] ^= (a[i] << i) ^ (a[i] >> (p - i));
-        if (a[p + 1] >> (p - 1) & 1)
-          a[p + 1] = ~a[p + 1];
-        a[p + 1] &= ALL1(p - 1);
+      if (disk_i == p && disk_j == p + 1) { // 相当于重新加密
+        CALC_P(a[p])
+        CALC_PP1(a[p + 1])
       } else if (disk_i < p && disk_j == p) {
-        uint128 S = 0; //对角线的 xor 和
-        for (int i = 0; i < p; i++)
-          S ^= (a[i] << i) ^ (a[i] >> (p - i));
+        uint64 S[p]; // 对角线的 xor
+        uint64 t;
+        CALC_DIAG(S)
 
-        S &= ALL1(p);
+        for (int l = 0; l < p - 1; l++)
+          S[l] ^= a[p + 1][l];
 
-        a[disk_i] = (S >> disk_i) ^ (a[p + 1] >> disk_i) ^ (S << (p - disk_i)) ^
-                    (a[p + 1] << (p - disk_i));
-
-        if (((a[p + 1] >> mod_id(disk_i - 1, p)) & 1) ^
-            ((S >> mod_id(disk_i - 1, p)) & 1))
-          a[disk_i] = ~a[disk_i];
-        a[disk_i] &= ALL1(p - 1);
-        for (int i = 0; i < p; i++)
-          a[disk_j] ^= a[i];
-
+        t = S[mod_p(disk_i - 1)];
+        for (int k = 0; k < p - 1; k++)
+          a[disk_i][k] = S[mod_p(disk_i + k - p)] ^ t;
+        CALC_P(a[p])
       } else if (disk_i < p &&
-                 disk_j == p + 1) { //由 a[p] 可以修复 disk_i 然后再求解 a[p+1]
-        for (int i = 0; i < p + 1; i++)
-          if (check_disk[i] == true)
-            a[disk_i] ^= a[i];
-        for (int i = 0; i < p; i++)
-          a[p + 1] ^= (a[i] << i) ^ (a[i] >> (p - i));
-        if (a[p + 1] >> (p - 1) & 1)
-          a[p + 1] = ~a[p + 1];
-        a[p + 1] &= ALL1(p - 1);
+                 disk_j == p + 1) { // 由 a[p] 可以修复 disk_i 然后再求解 a[p+1]
+        CALC_I(a[disk_i])
+        CALC_PP1(a[p + 1])
       } else if (disk_i < p && disk_j < p) {
-        uint128 S = 0; //对角线的 xor 和
-        bool syndromes = 0;
+        uint64 S = 0;
+        uint64 S0[p], S1[p];
 
-        for (int i = 0; i < p; i++) {
-          S ^= (a[i] << i) ^ (a[i] >> (p - i));
-          syndromes ^= ((a[p] >> i) & 1) ^ ((a[p + 1] >> i) & 1);
+        CALC_P(S0)
+        for (int l = 0; l <= p - 1; l++) {
+          S0[l] ^= a[p][l];
+          S ^= a[p][l] ^ a[p + 1][l];
         }
-        S ^= a[p + 1];
-        if (syndromes)
-          S = ~S;
-        S &= ALL1(p);
-        for (int i = 0; i < p; i++)
-          a[p] ^= a[i];
-        // 此时 a[p] 表示当前行丢失的两个数的 xor 值
-        // S 表示对角线上丢失的两个数的 xor 值
-        int now_diagonal_id = disk_j - 1, now_x = disk_j - disk_i - 1;
-        for (int i = 0; i < p; i++) {
-          a[disk_i] ^= ((S >> now_diagonal_id) & 1) << now_x;
-          a[disk_j] ^= (((a[p] ^ a[disk_i]) >> now_x) & 1) << now_x;
 
-          now_diagonal_id = mod_id(now_diagonal_id + disk_j - disk_i, p);
-          S ^= ((((a[p] ^ a[disk_i]) >> now_x) & 1)) << now_diagonal_id;
-          now_x = mod_id(now_x + disk_j - disk_i, p);
-        }
+        CALC_DIAG(S1)
+        for (int l = 0; l <= p - 1; l++)
+          S1[l] ^= S ^ a[p + 1][l];
+
+        const int ij = mod_p(disk_i - disk_j), ji = mod_p(disk_j - disk_i);
+        int s = mod_p(ij - 1);
+        do {
+          a[disk_j][s] = S1[mod_p(disk_j + s - p)] ^ a[disk_i][mod_p(s - ij)];
+          a[disk_i][s] = S0[s] ^ a[disk_j][s];
+          s = mod_p(s - ji);
+        } while (s != p - 1);
       }
-      write_bits(&output[0], a[disk_i], p - 1);
-      write_bits(&output[1], a[disk_j], p - 1);
+      write_array(&output[0], a[disk_i], p - 1);
+      write_array(&output[1], a[disk_j], p - 1);
     }
   }
 
@@ -448,8 +436,7 @@ void write(const char *file_name, const int p) {
   struct Input input;
   struct Output output[p + 2];
   long long file_size;
-  uint128 a[p];   // 0 ... (p - 1) 列的数据
-  uint128 b0, b1; // p 列的数据和 (p + 1) 列的数据
+  uint64 a[p + 2][p - 1];
 
   file_size = get_file_stat(file_name).st_size;
 
@@ -460,33 +447,23 @@ void write(const char *file_name, const int p) {
 
     sprintf(disk_file_name, "disk%d/%s", i, file_name);
     init_output(&output[i],
-                min(MAX_IO_BUFFER_SIZE_SUM / (p + 2), file_size / p),
+                min64(MAX_IO_BUFFER_SIZE_SUM / (p + 2), file_size / p),
                 disk_file_name);
 
     // 先将文件大小和 p 的值输出
-    write_bits(&output[i], file_size << 8 | p, 48);
+    write_uint64(&output[i], file_size << 8 | p);
   }
 
   // 开始加密
-  for (long long t = 0; t < (file_size << 3); t += (p - 1) * p) {
+  for (long long t = 0; t < (file_size << 3); t += 64 * (p - 1) * p) {
     for (int i = 0; i < p; i++)
-      a[i] = read_bits(&input, p - 1);
+      read_array(a[i], &input, p - 1);
 
-    b0 = b1 = 0;
+    CALC_P(a[p])
+    CALC_PP1(a[p + 1])
 
-    for (int i = 0; i < p; i++)
-      b0 ^= a[i];
-
-    for (int i = 0; i < p; i++)
-      b1 ^= (a[i] << i) ^ (a[i] >> (p - i));
-    if (b1 >> (p - 1) & 1)
-      b1 = ~b1;
-    b1 &= ALL1(p - 1);
-
-    for (int i = 0; i < p; i++)
-      write_bits(&output[i], a[i], p - 1);
-    write_bits(&output[p], b0, p - 1);
-    write_bits(&output[p + 1], b1, p - 1);
+    for (int i = 0; i < p + 2; i++)
+      write_array(&output[i], a[i], p - 1);
   }
 
   del_input(&input);
@@ -497,10 +474,10 @@ void write(const char *file_name, const int p) {
 void read(const char *file_name, const char *save_as) {
   long long file_size;
   int p;
-  struct Input temp_input;
   struct Output output;
   char disk_file_path[MAX_FILE_NAME_LENGTH];
   int disk_id;
+  int r, c;
 
   disk_id = -1;
   do {
@@ -515,10 +492,7 @@ void read(const char *file_name, const char *save_as) {
     return;
   }
 
-  init_input(&temp_input, 6, disk_file_path);
-  file_size = read_bits(&temp_input, 5 << 3);
-  p = read_bits(&temp_input, 1 << 3);
-  del_input(&temp_input);
+  get_info(disk_file_path, &file_size, &p);
 
   if (!repair_work(file_name, file_size, p, true)) {
     printf("File corrupted!\n");
@@ -530,20 +504,27 @@ void read(const char *file_name, const char *save_as) {
   for (int i = 0; i < p; i++) {
     sprintf(disk_file_path, "disk%d/%s", i, file_name);
     init_input(&input[i], MAX_IO_BUFFER_SIZE_SUM / p, disk_file_path);
-    read_bits(&input[i], 6 << 3);
+    read_uint64(&input[i]);
   }
   init_output(&output, file_size, save_as);
 
-  file_size <<= 3;
-  disk_id = 0;
-  while (file_size > p - 1) {
-    write_bits(&output, read_bits(&input[disk_id], p - 1), p - 1);
-    disk_id++;
-    if (disk_id == p)
-      disk_id = 0;
-    file_size -= p - 1;
+  int i = 0;
+  int j = 0;
+  while (file_size > 8) {
+    write_uint64(&output, read_uint64(&input[i]));
+    j++;
+    if (j == p - 1) {
+      j = 0;
+      i++;
+      if (i == p)
+        i = 0;
+    }
+    file_size -= 8;
   }
-  write_bits(&output, read_bits(&input[disk_id], file_size), file_size);
+  while (file_size > 0) {
+    write_char(&output, read_char(&input[i]));
+    file_size--;
+  }
 
   for (int i = 0; i < p; i++)
     del_input(&input[i]);
@@ -579,10 +560,7 @@ bool repair_directory(const char *dir_path) {
       while (sub_dir_path[pos] != '/')
         pos++;
 
-      init_input(&input, 6, sub_dir_path);
-      file_size = read_bits(&input, 5 << 3);
-      p = read_bits(&input, 1 << 3);
-      del_input(&input);
+      get_info(sub_dir_path, &file_size, &p);
 
       if (!repair_work(sub_dir_path + pos + 1, file_size, p,
                        false)) // 此处 sub_dir_path + pos + 1 即为原文件路径
@@ -630,8 +608,6 @@ void usage() {
 }
 
 int main(int argc, char **argv) {
-  // write("testfile", 3);
-  // return 0;
   if (argc < 2) {
     usage();
     return -1;
