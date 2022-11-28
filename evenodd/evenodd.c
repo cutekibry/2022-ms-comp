@@ -281,7 +281,7 @@ bool repair_work(const char *file_name, const long long size, const int p,
 
   bool check_disk[p + 2]; // 为 true 表示完好，为 false 表示损坏
   for (int i = 0; i < p + 2; i++) {
-    sprintf(disk_file_path, "disk%d/%s", i, file_name);
+    sprintf(disk_file_path, "disk_%d/%s", i, file_name);
     check_disk[i] = (access(disk_file_path, 0) == 0);
     if (!check_disk[i]) {
       if (number_erasures == 2)
@@ -302,7 +302,7 @@ bool repair_work(const char *file_name, const long long size, const int p,
   int now_output_id = 0;
 
   for (int i = 0; i < p + 2; i++) {
-    sprintf(disk_file_name, "disk%d/%s", i, file_name);
+    sprintf(disk_file_name, "disk_%d/%s", i, file_name);
     if (check_disk[i]) {
       init_input(&input[i], MAX_IO_BUFFER_SIZE_SUM / (p + 2), p - 1,
                  disk_file_name);
@@ -424,7 +424,7 @@ void write(const char *file_name, const int p) {
   for (int i = 0; i < p + 2; i++) {
     char disk_file_name[MAX_FILE_NAME_LENGTH];
 
-    sprintf(disk_file_name, "disk%d/%s", i, file_name);
+    sprintf(disk_file_name, "disk_%d/%s", i, file_name);
     init_output(&output[i],
                 min64(MAX_IO_BUFFER_SIZE_SUM / (p + 2), file_size / p), p - 1,
                 disk_file_name);
@@ -466,7 +466,7 @@ void read(const char *file_name, const char *save_as) {
   disk_id = -1;
   do {
     disk_id++;
-    sprintf(disk_file_path, "disk%d/%s", disk_id, file_name);
+    sprintf(disk_file_path, "disk_%d/%s", disk_id, file_name);
   } while (disk_id < MAX_P + 1 && access(disk_file_path, 0) == -1);
   if (access(disk_file_path, 0) == -1) {
     printf("File does not exist!\n");
@@ -486,7 +486,7 @@ void read(const char *file_name, const char *save_as) {
   struct Input input[p];
 
   for (int i = 0; i < p; i++) {
-    sprintf(disk_file_path, "disk%d/%s", i, file_name);
+    sprintf(disk_file_path, "disk_%d/%s", i, file_name);
     init_input(&input[i], MAX_IO_BUFFER_SIZE_SUM / p, p - 1, disk_file_path);
     read_uint64_direct(&input[i]);
     flush_input(&input[i]);
@@ -584,7 +584,7 @@ void repair(const int number_erasures, const int *idx) {
     disk_ok_id++;
 
   char disk_ok_name[MAX_FILE_NAME_LENGTH];
-  sprintf(disk_ok_name, "disk%d", disk_ok_id);
+  sprintf(disk_ok_name, "disk_%d", disk_ok_id);
   if (!repair_directory(disk_ok_name)) {
     printf("Too many corruptions!\n");
     return;
