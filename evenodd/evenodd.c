@@ -30,7 +30,7 @@ struct stat get_file_stat(const char *file_name) {
  * 会一并创造其祖先文件夹（如果不存在）。
  * @param file_name 文件名
  * @return NULL
- * @example file_create("disk3/subdir/something");
+ * @example file_create("disk_3/subdir/something");
  */
 void file_create(const char *file_name) {
   int n = strlen(file_name);
@@ -525,7 +525,7 @@ void read(const char *file_name, const char *save_as) {
  * @brief 修复加密数据文件夹
  * @param dir_path 要修复的文件夹路径
  * @return 是否成功修复
- * @example repair_directory("disk1");
+ * @example repair_directory("disk_1");
  */
 bool repair_directory(const char *dir_path) {
   DIR *root;
