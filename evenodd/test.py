@@ -108,10 +108,10 @@ def broken_rw_test(n, p, idx, broke_type):
 
     if broke_type:
         for x in idx:
-            system(f'rm disk{x}/{testfile}')
+            system(f'rm disk_{x}/{testfile}')
     else:
         for x in idx:
-            system(f'rm -r disk{x}')
+            system(f'rm -r disk_{x}')
 
     read(testfile, savefile)
     return_code = system(f'diff -q {testfile} {savefile}')
@@ -140,14 +140,14 @@ def repair_test(size, n, p, idx):
 
     hashes = []
     for x in idx:
-        hashes.append(sha256(f'disk{x}'))
-        system(f'rm -r disk{x}')
+        hashes.append(sha256(f'disk_{x}'))
+        system(f'rm -r disk_{x}')
 
     repair(idx)
 
     for i in range(len(idx)):
-        if sha256(f'disk{idx[i]}') != hashes[i]:
-            print(f'# 测试不通过，disk{idx[i]} 未正确修复')
+        if sha256(f'disk_{idx[i]}') != hashes[i]:
+            print(f'# 测试不通过，disk_{idx[i]} 未正确修复')
             exit(-1)
     print(f'# 测试通过')
     reset()
@@ -170,8 +170,8 @@ def huge_test(n, p):
     gen(n, testfile, cur_seed)
     write(testfile, p)
 
-    system(f'rm disk{p}/{testfile}')
-    system(f'rm disk{p + 1}/{testfile}')
+    system(f'rm disk_{p}/{testfile}')
+    system(f'rm disk_{p + 1}/{testfile}')
 
     repair([p, p + 1])
     read(testfile, savefile)
