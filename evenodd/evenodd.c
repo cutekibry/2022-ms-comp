@@ -1,7 +1,5 @@
 #include <assert.h>
 #include <dirent.h>
-#include <emmintrin.h>
-#include <immintrin.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,27 +7,17 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#define __AVX__ 1
-#define __AVX2__ 1
-#define __SSE__ 1
-#define __SSE2__ 1
-#define __SSE2_MATH__ 1
-#define __SSE3__ 1
-#define __SSE4_1__ 1
-#define __SSE4_2__ 1
-#define __SSE_MATH__ 1
-#define __SSSE3__ 1
-
-#pragma GCC target(                                                            \
-    "sse,sse2,sse3,ssse3,sse4.1,sse4.2,avx,avx2,popcnt,tune=native")
+#define ALL1(x) -1
 
 typedef __uint128_t uint128;
 typedef unsigned long long uint64;
 
 long long min64(long long x, long long y) { return x < y ? x : y; }
 
+#define mod_id(x, p)                                                           \
+  (((x) >= (p)) ? ((x) - (p)) : (((x) < 0) ? ((x) + (p)) : (x)))
+
 #define mod_p(x) (((x) < 0) ? ((x) + p) : (x))
-#define at(a, i) a[i >> 2][i & 3]
 
 struct stat get_file_stat(const char *file_name) {
   struct stat file_stat;
@@ -142,7 +130,7 @@ uint64 read_uint64_direct(struct Input *buffer) {
   return x;
 }
 uint64 read_uint64_unsafe(struct Input *buffer) { return *(buffer->p++); }
-void read_array_unsafe(void *a, struct Input *buffer, int n) {
+void read_array_unsafe(uint64 *a, struct Input *buffer, int n) {
   memcpy(a, buffer->p, n << 3);
   buffer->p += n;
 }
@@ -222,7 +210,7 @@ void write_bytes_direct(struct Output *buffer, uint64 x, int n) {
     x >>= 8;
   }
 }
-void write_array_unsafe(struct Output *buffer, void *a, int n) {
+void write_array_unsafe(struct Output *buffer, uint64 *a, int n) {
   memcpy(buffer->p, a, n << 3);
   buffer->p += n;
 }
@@ -238,48 +226,41 @@ void get_info(const char *file_path, long long *file_size, int *p) {
   fclose(file);
 }
 
-#define CALC_DIAG(res)                                                         \
-  {                                                                            \
-    __m256i _b1[4][2 * len4];                                                  \
-    memset(_b1, 0, sizeof(_b1));                                               \
-    memset(res, 0, sizeof(res));                                               \
-    for (int _i = 0; _i < p; _i++) {                                           \
-      __m256i *ptr = &_b1[_i & 3][_i >> 2];                                    \
-      for (int _j = 0; _j < len4; _j++, ptr++)                                 \
-        (*ptr) = _mm256_xor_si256(*ptr, a[_i][_j]);                            \
-    }                                                                          \
-    uint64 *_b064 = _b1[0];                                                    \
-    for (int _k = 1; _k < 4; _k++) {                                           \
-      uint64 *_b64 = _b1[_k];                                                  \
-      for (int _i = _k; _i < 2 * (p - 1); _i++)                                \
-        _b064[_i] ^= _b64[_i - _k];                                            \
-    }                                                                          \
-    uint64 *_res64 = res;                                                      \
-    for (int _i = 0; _i <= p - 1; _i++)                                        \
-      _res64[_i] = _b064[_i] ^ _b064[_i + p];                                  \
-  }
 #define CALC_PP1(res)                                                          \
   {                                                                            \
-    CALC_DIAG(res)                                                             \
-    uint64 *_res64 = res;                                                      \
-    for (int _i = 0; _i <= p - 1; _i++)                                         \
-      _res64[_i] ^= _res64[p - 1];                                             \
+    uint64 _b1[2 * p - 1];                                                     \
+    memset(_b1, 0, sizeof(_b1));                                               \
+    for (int _i = 0; _i < p; _i++)                                             \
+      for (int _j = 0; _j < p - 1; _j++)                                       \
+        _b1[_i + _j] ^= a[_i][_j];                                             \
+    for (int _i = 0; _i < p - 1; _i++)                                         \
+      res[_i] = _b1[_i] ^ _b1[p - 1] ^ _b1[_i + p];                            \
   }
-
+#define CALC_DIAG(res)                                                         \
+  {                                                                            \
+    uint64 _b1[2 * p - 1];                                                     \
+    memset(_b1, 0, sizeof(_b1));                                               \
+    for (int _i = 0; _i < p; _i++)                                             \
+      for (int _j = 0; _j < p - 1; _j++)                                       \
+        _b1[_i + _j] ^= a[_i][_j];                                             \
+    for (int _i = 0; _i < p - 1; _i++)                                         \
+      res[_i] = _b1[_i] ^ _b1[_i + p];                                         \
+    res[p - 1] = _b1[p - 1];                                                   \
+  }
 #define CALC_P(res)                                                            \
   {                                                                            \
     memset(res, 0, sizeof(res));                                               \
     for (int _i = 0; _i < p; _i++)                                             \
-      for (int _j = 0; _j < len4; _j++)                                        \
-        res[_j] = _mm256_xor_si256(res[_j], a[_i][_j]);                        \
+      for (int _j = 0; _j < p - 1; _j++)                                       \
+        res[_j] ^= a[_i][_j];                                                  \
   }
 #define CALC_I(res)                                                            \
   {                                                                            \
     memset(res, 0, sizeof(res));                                               \
     for (int _i = 0; _i < p + 1; _i++)                                         \
       if (check_disk[_i])                                                      \
-        for (int _j = 0; _j < len4; _j++)                                      \
-          res[_j] = _mm256_xor_si256(res[_j], a[_i][_j]);                      \
+        for (int _j = 0; _j < p - 1; _j++)                                     \
+          res[_j] ^= a[_i][_j];                                                \
   }
 
 /**
@@ -316,8 +297,7 @@ bool repair_work(const char *file_name, const long long size, const int p,
 
   struct Input input[p + 2];
   struct Output output[number_erasures];
-  const int len4 = (p + 3) / 4;
-  __m256i a[p + 2][len4]; // 0 ... (p + 1) 列的数据
+  uint64 a[p + 2][p]; // 0 ... (p + 1) 列的数据
   char disk_file_name[MAX_FILE_NAME_LENGTH];
   int now_output_id = 0;
 
@@ -343,10 +323,12 @@ bool repair_work(const char *file_name, const long long size, const int p,
         if (check_disk[i])
           flush_input(&input[i]);
 
-    memset(a, 0, sizeof(a));
     for (int i = 0; i < p + 2; i++)
-      if (check_disk[i])
+      if (check_disk[i]) {
         read_array_unsafe(a[i], &input[i], p - 1);
+        a[i][p - 1] = 0;
+      } else
+        memset(a[i], 0, sizeof(a[i]));
 
     if (number_erasures == 1) { // 1 个文件损坏
       if (idx[0] == p)
@@ -365,45 +347,40 @@ bool repair_work(const char *file_name, const long long size, const int p,
         CALC_P(a[p])
         CALC_PP1(a[p + 1])
       } else if (disk_i < p && disk_j == p) {
-        __m256i S[len4]; // 对角线的 xor
+        uint64 S[p]; // 对角线的 xor
         uint64 t;
         CALC_DIAG(S)
 
-        for (int l = 0; l < len4; l++)
-          S[l] = _mm256_xor_si256(S[l], a[p + 1][l]);
+        for (int l = 0; l < p - 1; l++)
+          S[l] ^= a[p + 1][l];
 
-        uint64 *S64 = S, *ai64 = a[disk_i];
-        t = S64[mod_p(disk_i - 1)];
+        t = S[mod_p(disk_i - 1)];
         for (int k = 0; k < p - 1; k++)
-          ai64[k] = S64[mod_p(disk_i + k - p)] ^ t;
+          a[disk_i][k] = S[mod_p(disk_i + k - p)] ^ t;
         CALC_P(a[p])
       } else if (disk_i < p &&
                  disk_j == p + 1) { // 由 a[p] 可以修复 disk_i 然后再求解 a[p+1]
         CALC_I(a[disk_i])
         CALC_PP1(a[p + 1])
       } else if (disk_i < p && disk_j < p) {
-        __m256i S0[len4], S1[len4], Sb = _mm256_set1_epi32(0);
+        uint64 S = 0;
+        uint64 S0[p], S1[p];
 
         CALC_P(S0)
-        for (int l = 0; l < len4; l++) {
-          S0[l] = _mm256_xor_si256(S0[l], a[p][l]);
-          Sb = _mm256_xor_si256(Sb, a[p][l]);
-          Sb = _mm256_xor_si256(Sb, a[p + 1][l]);
+        for (int l = 0; l <= p - 1; l++) {
+          S0[l] ^= a[p][l];
+          S ^= a[p][l] ^ a[p + 1][l];
         }
-        Sb = _mm256_set1_epi64x(Sb[0] ^ Sb[1] ^ Sb[2] ^ Sb[3]);
 
         CALC_DIAG(S1)
-        for (int l = 0; l < len4; l++)
-          S1[l] = _mm256_xor_si256(S1[l], _mm256_xor_si256(Sb, a[p + 1][l]));
+        for (int l = 0; l <= p - 1; l++)
+          S1[l] ^= S ^ a[p + 1][l];
 
         const int ij = mod_p(disk_i - disk_j), ji = mod_p(disk_j - disk_i);
         int s = mod_p(ij - 1);
-
-        uint64 *aj64 = a[disk_j], *ai64 = a[disk_i], *S064 = S0, *S164 = S1;
-
         do {
-          aj64[s] = S164[mod_p(disk_j + s - p)] ^ ai64[mod_p(s - ij)];
-          ai64[s] = S064[s] ^ aj64[s];
+          a[disk_j][s] = S1[mod_p(disk_j + s - p)] ^ a[disk_i][mod_p(s - ij)];
+          a[disk_i][s] = S0[s] ^ a[disk_j][s];
           s = mod_p(s - ji);
         } while (s != p - 1);
       }
@@ -437,8 +414,7 @@ void write(const char *file_name, const int p) {
   struct Input input;
   struct Output output[p + 2];
   long long file_size;
-  const int len4 = (p + 3) / 4;
-  __m256i a[p + 2][len4];
+  uint64 a[p + 2][p - 1];
 
   file_size = get_file_stat(file_name).st_size;
 
@@ -459,7 +435,6 @@ void write(const char *file_name, const int p) {
 
   // 开始加密
   for (long long t = 0; t < (file_size << 3); t += 64 * (p - 1) * p) {
-    memset(a, 0, sizeof(a));
     if (input.p == input.ed)
       flush_input(&input);
     for (int i = 0; i < p; i++)
