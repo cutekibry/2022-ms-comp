@@ -3,10 +3,11 @@ import matplotlib.pyplot as plt
 import time
 from os import system
 import datetime
+from pathlib import Path
 
 
-T = 3
-N = 100 * 1024 * 1024
+T = 5
+N = 200 * 1024 * 1024
 
 
 def timing(command):
@@ -48,13 +49,6 @@ def repair(idx):
     return x
 
 
-DELTA = 0.8
-
-
-def fix(x):
-    return [DELTA * x[0] + (1 - DELTA) * x[1]] + [(1 - DELTA) / 2 * (x[i - 1] + x[i + 1]) + DELTA * x[i] for i in range(1, len(x) - 1)] + [DELTA * x[-1] + (1 - DELTA) * x[-2]]
-
-
 
 primes = [x for x in range(3, 101) if [
     y for y in range(2, x) if x % y == 0] == []]
@@ -78,14 +72,24 @@ if __name__ == '__main__':
         y2.append(repair([p, p + 1]))
         y3.append(read('tmptest', '/dev/null'))
 
-    y1 = fix(y1)
-    y2 = fix(y2)
-    y3 = fix(y3)
-
     system('rm -r disk* tmptest')
+
+    avg_time = (sum(y1) + sum(y2) + sum(y3)) / (3 * len(primes))
+
+    info = f'''Number of primes: {len(primes)}
+T: {T}
+Size: {(N / 1024 / 1024):.2f} MB
+Avg time: {(avg_time * 1000):.6f} ms
+Avg speed: {(avg_time / (N / 1024 / 1024) * 1000):.6f} ms/MB'''
+
+    print(info)
+    with open(f'benchmark/{datetime.datetime.now().isoformat()}.log', 'w') as f:
+        f.write(info)
+
     plt.plot(x, y1, label='write')
     plt.plot(x, y2, label='repair')
     plt.plot(x, y3, label='read')
     plt.legend()
     plt.savefig(f'benchmark/{datetime.datetime.now().isoformat()}.png')
     plt.show()
+
