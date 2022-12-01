@@ -1,5 +1,11 @@
 #!/usr/bin/python3
-import matplotlib.pyplot as plt
+
+try:
+    import matplotlib.pyplot as plt
+    HAS_PLT = True
+except ModuleNotFoundError:
+    HAS_PLT = False
+
 import time
 from os import system
 import datetime
@@ -86,10 +92,11 @@ Avg speed: {(avg_time / (N / 1024 / 1024) * 1000):.6f} ms/MB'''
     with open(f'benchmark/{datetime.datetime.now().isoformat()}.log', 'w') as f:
         f.write(info)
 
-    plt.plot(x, y1, label='write')
-    plt.plot(x, y2, label='repair')
-    plt.plot(x, y3, label='read')
-    plt.legend()
-    plt.savefig(f'benchmark/{datetime.datetime.now().isoformat()}.png')
-    plt.show()
+    if HAS_PLT:
+        plt.plot(x, y1, label='write')
+        plt.plot(x, y2, label='repair')
+        plt.plot(x, y3, label='read')
+        plt.legend()
+        plt.savefig(f'benchmark/{datetime.datetime.now().isoformat()}.png')
+        plt.show()
 
