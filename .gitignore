@@ -3,5 +3,6 @@ evenodd/testfile
 evenodd/savefile
 evenodd/disk*
 evenodd/benchmark
+evenodd/gendata
 .~lock*
 .vscode
