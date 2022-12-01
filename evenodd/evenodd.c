@@ -7,15 +7,10 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#define ALL1(x) -1
-
 typedef __uint128_t uint128;
 typedef unsigned long long uint64;
 
 long long min64(long long x, long long y) { return x < y ? x : y; }
-
-#define mod_id(x, p)                                                           \
-  (((x) >= (p)) ? ((x) - (p)) : (((x) < 0) ? ((x) + (p)) : (x)))
 
 #define mod_p(x) (((x) < 0) ? ((x) + p) : (x))
 
@@ -53,7 +48,7 @@ void file_create(const char *file_name) {
 const int MAX_IO_BUFFER_SIZE_SUM =
     1 << 28; // 函数内 IO 缓存区大小最大字节数（不严格），防止空间过大
 const int MAX_PER_IO_BUFFER_SIZE =
-    1 << 20; // 单个 IO 缓存区大小最大字节数，防止缓存过大影响速度
+    1 << 16; // 单个 IO 缓存区大小最大字节数，防止缓存过大影响速度
 const int MAX_FILE_NAME_LENGTH = 260; // 文件名的最大长度
 const int MAX_P = 100;                // p 的最大值
 /**
